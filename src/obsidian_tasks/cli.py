@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from obsidian_tasks.env import load_dotenv_if_present
-from obsidian_tasks.tasks import extract_tasks
+from obsidian_tasks.tasks import extract_tasks, extract_tasks_from_today_note
 
 
 def resolve_inbox_path() -> Path:
@@ -45,6 +45,31 @@ def _cmd_inbox(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_today(args: argparse.Namespace) -> int:
+    tasks = extract_tasks_from_today_note()
+
+    def display_text(raw: str) -> str:
+        # Omit everything before the first '[' (e.g. '- ' or '* '), keep the checkbox.
+        s = raw.lstrip()
+        i = s.find("[")
+        return s[i:].strip() if i != -1 else s.strip()
+
+    if args.json:
+        import json
+
+        payload = [{"file": str(t.file), "text": display_text(t.raw)} for t in tasks]
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        return 0
+
+    if not tasks:
+        return 0
+
+    for t in tasks:
+        sys.stdout.write(f"{display_text(t.raw)}\n")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     load_dotenv_if_present()
     parser = argparse.ArgumentParser(prog="ot", description="Obsidian tasks CLI")
@@ -61,6 +86,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inbox.add_argument("--json", action="store_true", help="Output JSON")
     inbox.set_defaults(func=_cmd_inbox)
+
+    today = sub.add_parser(
+        "today",
+        help="List Markdown tasks in today's daily note (Calendar folder, yyyy-mm-dd.md)",
+    )
+    today.add_argument("--json", action="store_true", help="Output JSON")
+    today.set_defaults(func=_cmd_today)
 
     return parser
 
