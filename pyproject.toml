@@ -1,0 +1,28 @@
+[project]
+name = "obsidian-tasks-cli"
+version = "0.1.0"
+description = "CLI tool to manage Obsidian tasks"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Florian Schafer" }]
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+ot = "obsidian_tasks.cli:main"
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
