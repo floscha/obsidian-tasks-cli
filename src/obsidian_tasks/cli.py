@@ -5,8 +5,36 @@ import os
 import sys
 from pathlib import Path
 
+from obsidian_tasks import tasks as tasks_mod
 from obsidian_tasks.env import load_dotenv_if_present
-from obsidian_tasks.tasks import extract_tasks, extract_tasks_from_today_note
+
+ANSI_RED = "\x1b[31m"
+ANSI_GREEN = "\x1b[32m"
+ANSI_GREY = "\x1b[90m"
+ANSI_RESET = "\x1b[0m"
+
+
+def colorize_checkbox_prefix(text: str) -> str:
+    """Colorize the leading checkbox token in a normalized task string.
+
+    Expects the string to start with a checkbox token like "[ ]" / "[x]" / "[-]".
+    If the format doesn't match, returns the string unchanged.
+    """
+
+    if len(text) < 3 or text[0] != "[" or text[2] != "]":
+        return text
+
+    token = text[:3]
+    rest = text[3:]
+
+    if token == "[ ]":
+        return f"{ANSI_RED}{token}{ANSI_RESET}{rest}"
+    if token.lower() == "[x]":
+        return f"{ANSI_GREEN}{token}{ANSI_RESET}{rest}"
+    if token == "[-]":
+        return f"{ANSI_GREY}{token}{ANSI_RESET}{rest}"
+
+    return text
 
 
 def resolve_inbox_path() -> Path:
@@ -20,7 +48,7 @@ def resolve_inbox_path() -> Path:
 def _cmd_inbox(args: argparse.Namespace) -> int:
     root = Path(args.path).expanduser()
 
-    tasks = extract_tasks(root)
+    tasks = tasks_mod.extract_tasks(root)
 
     def display_text(raw: str) -> str:
         # Omit everything before the first '[' (e.g. '- ' or '* '), keep the checkbox.
@@ -40,13 +68,16 @@ def _cmd_inbox(args: argparse.Namespace) -> int:
 
     # Human output: one task per line
     for t in tasks:
-        sys.stdout.write(f"{display_text(t.raw)}\n")
+        text = display_text(t.raw)
+        if args.color:
+            text = colorize_checkbox_prefix(text)
+        sys.stdout.write(f"{text}\n")
 
     return 0
 
 
 def _cmd_today(args: argparse.Namespace) -> int:
-    tasks = extract_tasks_from_today_note()
+    tasks = tasks_mod.extract_tasks_from_today_note()
 
     def display_text(raw: str) -> str:
         # Omit everything before the first '[' (e.g. '- ' or '* '), keep the checkbox.
@@ -65,7 +96,10 @@ def _cmd_today(args: argparse.Namespace) -> int:
         return 0
 
     for t in tasks:
-        sys.stdout.write(f"{display_text(t.raw)}\n")
+        text = display_text(t.raw)
+        if args.color:
+            text = colorize_checkbox_prefix(text)
+        sys.stdout.write(f"{text}\n")
 
     return 0
 
@@ -85,6 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     inbox.add_argument("--json", action="store_true", help="Output JSON")
+    inbox.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
     inbox.set_defaults(func=_cmd_inbox)
 
     today = sub.add_parser(
@@ -92,6 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="List Markdown tasks in today's daily note (Calendar folder, yyyy-mm-dd.md)",
     )
     today.add_argument("--json", action="store_true", help="Output JSON")
+    today.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
     today.set_defaults(func=_cmd_today)
 
     return parser

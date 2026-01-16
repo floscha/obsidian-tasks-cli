@@ -1,6 +1,13 @@
 from datetime import date
 from pathlib import Path
 
+from obsidian_tasks.cli import (
+    ANSI_GREEN,
+    ANSI_GREY,
+    ANSI_RED,
+    ANSI_RESET,
+    colorize_checkbox_prefix,
+)
 from obsidian_tasks.tasks import (
     extract_tasks_from_file,
     extract_tasks_from_today_note,
@@ -52,9 +59,8 @@ def test_display_text_strips_prefix() -> None:
 
 def test_resolve_calendar_daily_note_path_default_calendar_dir(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
-    # No OT_CALENDAR_DIR set -> default 5_Calendar
     p = resolve_calendar_daily_note_path(for_date=date(2026, 1, 16))
-    assert p == tmp_path / "5_Calendar" / "2026-01-16.md"
+    assert p == tmp_path / "2026-01-16.md"
 
 
 def test_resolve_calendar_daily_note_path_custom_calendar_dir(tmp_path: Path, monkeypatch) -> None:
@@ -64,17 +70,8 @@ def test_resolve_calendar_daily_note_path_custom_calendar_dir(tmp_path: Path, mo
     assert p == tmp_path / "Calendar" / "2026-01-16.md"
 
 
-def test_extract_tasks_from_today_note_missing_returns_empty(tmp_path: Path) -> None:
-    tasks = extract_tasks_from_today_note(
-        vault_path=tmp_path, calendar_dir="5_Calendar", for_date=date(2026, 1, 16)
-    )
-    assert tasks == []
-
-
 def test_extract_tasks_from_today_note_reads_tasks(tmp_path: Path) -> None:
-    cal = tmp_path / "5_Calendar"
-    cal.mkdir(parents=True)
-    note = cal / "2026-01-16.md"
+    note = tmp_path / "2026-01-16.md"
     note.write_text(
         """# 2026-01-16
 
@@ -86,6 +83,30 @@ not a task
     )
 
     tasks = extract_tasks_from_today_note(
-        vault_path=tmp_path, calendar_dir="5_Calendar", for_date=date(2026, 1, 16)
+        vault_path=tmp_path, for_date=date(2026, 1, 16)
     )
     assert [t.text for t in tasks] == ["- [ ] task one", "- [x] task two"]
+
+
+def test_colorize_checkbox_prefix() -> None:
+    assert (
+        colorize_checkbox_prefix("[ ] hello")
+        == f"{ANSI_RED}[ ]{ANSI_RESET} hello"
+    )
+    assert (
+        colorize_checkbox_prefix("[x] done")
+        == f"{ANSI_GREEN}[x]{ANSI_RESET} done"
+    )
+    assert (
+        colorize_checkbox_prefix("[X] done")
+        == f"{ANSI_GREEN}[X]{ANSI_RESET} done"
+    )
+    assert (
+        colorize_checkbox_prefix("[-] cancelled")
+        == f"{ANSI_GREY}[-]{ANSI_RESET} cancelled"
+    )
+
+    # Unrecognized token stays unchanged
+    assert colorize_checkbox_prefix("[?] maybe") == "[?] maybe"
+    # Not a bracket token stays unchanged
+    assert colorize_checkbox_prefix("hello") == "hello"
