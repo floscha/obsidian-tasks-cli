@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from obsidian_tasks.cli import (
@@ -195,3 +195,47 @@ def test_cli_today_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys
     assert sorted(out) == sorted(
         ["[ ] local", "[ ] follow up"]
     )
+
+
+def test_cli_yesterday_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+
+    yesterday = date.today() - timedelta(days=1)
+
+    note = tmp_path / f"{yesterday:%Y-%m-%d}.md"
+    note.write_text("# Yesterday\n\n- [ ] local\n", encoding="utf-8")
+
+    other = tmp_path / "Work.md"
+    other.write_text(
+        f"- [ ] follow up [[{yesterday:%Y-%m-%d}]]\n",
+        encoding="utf-8",
+    )
+
+    rc = main(["yesterday"])
+    assert rc == 0
+
+    out = capsys.readouterr().out.splitlines()
+    assert sorted(out) == sorted(["[ ] local", "[ ] follow up"])
+
+
+def test_cli_tomorrow_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+
+    tomorrow = date.today() + timedelta(days=1)
+
+    note = tmp_path / f"{tomorrow:%Y-%m-%d}.md"
+    note.write_text("# Tomorrow\n\n- [ ] local\n", encoding="utf-8")
+
+    other = tmp_path / "Work.md"
+    other.write_text(
+        f"- [ ] follow up [[{tomorrow:%Y-%m-%d}]]\n",
+        encoding="utf-8",
+    )
+
+    rc = main(["tomorrow"])
+    assert rc == 0
+
+    out = capsys.readouterr().out.splitlines()
+    assert sorted(out) == sorted(["[ ] local", "[ ] follow up"])

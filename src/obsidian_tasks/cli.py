@@ -4,7 +4,7 @@ import argparse
 import os
 import re
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from obsidian_tasks import tasks as tasks_mod
@@ -93,18 +93,28 @@ def _cmd_inbox(args: argparse.Namespace) -> int:
 
 
 def _cmd_today(args: argparse.Namespace) -> int:
-    # Today's note tasks + backlink tasks across the vault that reference today's note.
+    return _cmd_day_offset(args, offset_days=0)
+
+
+def _cmd_day_offset(args: argparse.Namespace, *, offset_days: int) -> int:
+    """List tasks for a day relative to today.
+
+    Includes:
+    - tasks from the day's daily note
+    - tasks across the vault that backlink to that note via [[yyyy-mm-dd]]
+    """
+
     vault_root = os.environ.get("OT_VAULT_PATH")
     calendar_dir = os.environ.get("OT_CALENDAR_DIR")
 
-    today = date.today()
+    target = date.today() + timedelta(days=offset_days)
 
     note_path = tasks_mod.resolve_calendar_daily_note_path(
-        vault_path=vault_root, calendar_dir=calendar_dir, for_date=today
+        vault_path=vault_root, calendar_dir=calendar_dir, for_date=target
     )
 
     tasks = tasks_mod.extract_tasks_from_today_note(
-        vault_path=vault_root, calendar_dir=calendar_dir, for_date=today
+        vault_path=vault_root, calendar_dir=calendar_dir, for_date=target
     )
     if vault_root:
         tasks.extend(
@@ -152,6 +162,14 @@ def _cmd_today(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_yesterday(args: argparse.Namespace) -> int:
+    return _cmd_day_offset(args, offset_days=-1)
+
+
+def _cmd_tomorrow(args: argparse.Namespace) -> int:
+    return _cmd_day_offset(args, offset_days=1)
+
+
 def build_parser() -> argparse.ArgumentParser:
     load_dotenv_if_present()
     parser = argparse.ArgumentParser(prog="ot", description="Obsidian tasks CLI")
@@ -177,6 +195,22 @@ def build_parser() -> argparse.ArgumentParser:
     today.add_argument("--json", action="store_true", help="Output JSON")
     today.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
     today.set_defaults(func=_cmd_today)
+
+    yesterday = sub.add_parser(
+        "yesterday",
+        help="List Markdown tasks in yesterday's daily note (Calendar folder, yyyy-mm-dd.md)",
+    )
+    yesterday.add_argument("--json", action="store_true", help="Output JSON")
+    yesterday.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    yesterday.set_defaults(func=_cmd_yesterday)
+
+    tomorrow = sub.add_parser(
+        "tomorrow",
+        help="List Markdown tasks in tomorrow's daily note (Calendar folder, yyyy-mm-dd.md)",
+    )
+    tomorrow.add_argument("--json", action="store_true", help="Output JSON")
+    tomorrow.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    tomorrow.set_defaults(func=_cmd_tomorrow)
 
     return parser
 
