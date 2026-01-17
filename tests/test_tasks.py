@@ -239,3 +239,72 @@ def test_cli_tomorrow_includes_backlinked_tasks(tmp_path: Path, monkeypatch, cap
 
     out = capsys.readouterr().out.splitlines()
     assert sorted(out) == sorted(["[ ] local", "[ ] follow up"])
+
+
+def test_cli_today_no_color_by_default(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    today = date.today()
+    note = tmp_path / f"{today:%Y-%m-%d}.md"
+    note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
+
+    rc = main(["today"])
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    assert out == "[ ] local\n"
+
+
+def test_cli_today_uses_colors_from_env(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.setenv("OT_USE_COLORS", "1")
+
+    today = date.today()
+    note = tmp_path / f"{today:%Y-%m-%d}.md"
+    note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
+
+    rc = main(["today"])
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    assert out == f"{ANSI_RED}[ ]{ANSI_RESET} local\n"
+
+
+def test_cli_today_uses_colors_from_ot_env(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.setenv("OT_USE_COLORS", "true")
+
+    today = date.today()
+    note = tmp_path / f"{today:%Y-%m-%d}.md"
+    note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
+
+    rc = main(["today"])
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    assert out == f"{ANSI_RED}[ ]{ANSI_RESET} local\n"
+
+
+def test_cli_today_uses_colors_from_dotenv(tmp_path: Path, monkeypatch, capsys) -> None:
+    # Simulate running from a directory containing a .env file.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        'OT_VAULT_PATH="{vault}"\nOT_CALENDAR_DIR=""\nOT_USE_COLORS=1\n'.format(
+            vault=str(tmp_path)
+        ),
+        encoding="utf-8",
+    )
+
+    today = date.today()
+    note = tmp_path / f"{today:%Y-%m-%d}.md"
+    note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
+
+    rc = main(["today"])
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    assert out == f"{ANSI_RED}[ ]{ANSI_RESET} local\n"

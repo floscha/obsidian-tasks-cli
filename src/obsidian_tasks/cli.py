@@ -19,6 +19,29 @@ ANSI_RESET = "\x1b[0m"
 _WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 
 
+def _env_truthy(name: str) -> bool:
+    """Interpret an environment variable as a boolean.
+
+    Truthy values: 1, true, yes, on (case-insensitive)
+    Falsy values: 0, false, no, off, empty/unset
+    """
+
+    v = os.environ.get(name)
+    if v is None:
+        return False
+    v = v.strip().lower()
+    if v in {"1", "true", "yes", "on"}:
+        return True
+    if v in {"0", "false", "no", "off", ""}:
+        return False
+    # Be conservative: unknown values are treated as False.
+    return False
+
+
+def _use_colors_from_env() -> bool:
+    return _env_truthy("OT_USE_COLORS")
+
+
 def _strip_wikilinks(text: str) -> str:
     """Remove Obsidian wiki links from text.
 
@@ -82,10 +105,12 @@ def _cmd_inbox(args: argparse.Namespace) -> int:
     if not tasks:
         return 0
 
+    use_color = bool(args.color) or _use_colors_from_env()
+
     # Human output: one task per line
     for t in tasks:
         text = display_text(t.raw)
-        if args.color:
+        if use_color:
             text = colorize_checkbox_prefix(text)
         sys.stdout.write(f"{text}\n")
 
@@ -153,9 +178,11 @@ def _cmd_day_offset(args: argparse.Namespace, *, offset_days: int) -> int:
     if not tasks:
         return 0
 
+    use_color = bool(args.color) or _use_colors_from_env()
+
     for t in tasks:
         text = display_text(t.raw)
-        if args.color:
+        if use_color:
             text = colorize_checkbox_prefix(text)
         sys.stdout.write(f"{text}\n")
 
