@@ -36,6 +36,18 @@ List tasks from the default inbox path:
 uv run ot inbox
 ```
 
+List **all** tasks across the whole vault:
+
+```bash
+uv run ot all
+```
+
+JSON output:
+
+```bash
+uv run ot all --json
+```
+
 ### Output format
 
 The default (human) output prints **one task per line**:

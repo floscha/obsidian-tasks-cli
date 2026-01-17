@@ -39,7 +39,19 @@ def _env_truthy(name: str) -> bool:
 
 
 def _use_colors_from_env() -> bool:
+    # Colors are opt-in only.
     return _env_truthy("OT_USE_COLORS")
+
+
+def _use_colors(args: argparse.Namespace) -> bool:
+    """Decide whether to emit ANSI colors.
+
+    Colors are enabled only when explicitly requested via:
+    - the command flag: --color / -c
+    - environment variable: OT_USE_COLORS
+    """
+
+    return bool(getattr(args, "color", False)) or _use_colors_from_env()
 
 
 def _strip_wikilinks(text: str) -> str:
@@ -98,14 +110,21 @@ def _cmd_inbox(args: argparse.Namespace) -> int:
     if args.json:
         import json
 
-        payload = [{"file": str(t.file), "text": display_text(t.raw)} for t in tasks]
+        payload = [
+            {
+                "file": str(t.file),
+                "line_number": t.line_no,
+                "text": display_text(t.raw),
+            }
+            for t in tasks
+        ]
         sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
         return 0
 
     if not tasks:
         return 0
 
-    use_color = bool(args.color) or _use_colors_from_env()
+    use_color = _use_colors(args)
 
     # Human output: one task per line
     for t in tasks:
@@ -171,14 +190,21 @@ def _cmd_day_offset(args: argparse.Namespace, *, offset_days: int) -> int:
     if args.json:
         import json
 
-        payload = [{"file": str(t.file), "text": display_text(t.raw)} for t in tasks]
+        payload = [
+            {
+                "file": str(t.file),
+                "line_number": t.line_no,
+                "text": display_text(t.raw),
+            }
+            for t in tasks
+        ]
         sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
         return 0
 
     if not tasks:
         return 0
 
-    use_color = bool(args.color) or _use_colors_from_env()
+    use_color = _use_colors(args)
 
     for t in tasks:
         text = display_text(t.raw)
@@ -197,8 +223,57 @@ def _cmd_tomorrow(args: argparse.Namespace) -> int:
     return _cmd_day_offset(args, offset_days=1)
 
 
+def _cmd_all(args: argparse.Namespace) -> int:
+    """List all Markdown tasks across the vault."""
+
+    vault_root = os.environ.get("OT_VAULT_PATH")
+    if not vault_root:
+        raise KeyError(
+            "OT_VAULT_PATH is required for the 'all' command (set it in your environment or .env)"
+        )
+
+    tasks = tasks_mod.extract_tasks(Path(vault_root).expanduser())
+
+    def display_text(raw: str) -> str:
+        # Omit everything before the first '[' (e.g. '- ' or '* '), keep the checkbox.
+        s = raw.lstrip()
+        i = s.find("[")
+        shown = s[i:].strip() if i != -1 else s.strip()
+        return _strip_wikilinks(shown)
+
+    if args.json:
+        import json
+
+        payload = [
+            {
+                "file": str(t.file),
+                "line_number": t.line_no,
+                "text": display_text(t.raw),
+            }
+            for t in tasks
+        ]
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        return 0
+
+    if not tasks:
+        return 0
+
+    use_color = _use_colors(args)
+
+    for t in tasks:
+        text = display_text(t.raw)
+        if use_color:
+            text = colorize_checkbox_prefix(text)
+        sys.stdout.write(f"{text}\n")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
-    load_dotenv_if_present()
+    # During test runs, avoid pulling local developer defaults from a repo .env.
+    # Tests should control env vars explicitly via monkeypatch.
+    if os.environ.get("OT_DISABLE_DOTENV") not in {"1", "true", "yes", "on"}:
+        load_dotenv_if_present()
     parser = argparse.ArgumentParser(prog="ot", description="Obsidian tasks CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -238,6 +313,14 @@ def build_parser() -> argparse.ArgumentParser:
     tomorrow.add_argument("--json", action="store_true", help="Output JSON")
     tomorrow.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
     tomorrow.set_defaults(func=_cmd_tomorrow)
+
+    all_cmd = sub.add_parser(
+        "all",
+        help="List Markdown tasks across the whole vault (all notes)",
+    )
+    all_cmd.add_argument("--json", action="store_true", help="Output JSON")
+    all_cmd.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    all_cmd.set_defaults(func=_cmd_all)
 
     return parser
 

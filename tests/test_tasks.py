@@ -18,6 +18,23 @@ from obsidian_tasks.tasks import (
 )
 
 
+def _run_cli(monkeypatch, argv: list[str], *, disable_dotenv: bool = True) -> int:
+    """Run the CLI in tests with deterministic environment handling.
+
+    By default we disable dotenv loading so the developer's repo `.env` doesn't
+    affect test results.
+    """
+
+    if disable_dotenv:
+        monkeypatch.setenv("OT_DISABLE_DOTENV", "1")
+    else:
+        monkeypatch.delenv("OT_DISABLE_DOTENV", raising=False)
+
+    # Color behavior is controlled explicitly inside each test via OT_USE_COLORS
+    # or the -c/--color flag.
+    return main(argv)
+
+
 def _display_text(raw: str) -> str:
     s = raw.lstrip()
     i = s.find("[")
@@ -178,6 +195,7 @@ def test_cli_today_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys
     monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
     # Ensure the CLI looks in the vault root for the daily note.
     monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
 
     today = date.today()
     note = tmp_path / f"{today:%Y-%m-%d}.md"
@@ -187,7 +205,7 @@ def test_cli_today_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys
     other.write_text(f"- [ ] follow up [[{today:%Y-%m-%d}]]\n", encoding="utf-8")
 
     # Act
-    rc = main(["today"])
+    rc = _run_cli(monkeypatch, ["today"])
     assert rc == 0
 
     # Assert: output includes both tasks (order doesn't matter)
@@ -200,6 +218,7 @@ def test_cli_today_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys
 def test_cli_yesterday_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
     monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
 
     yesterday = date.today() - timedelta(days=1)
 
@@ -212,7 +231,7 @@ def test_cli_yesterday_includes_backlinked_tasks(tmp_path: Path, monkeypatch, ca
         encoding="utf-8",
     )
 
-    rc = main(["yesterday"])
+    rc = _run_cli(monkeypatch, ["yesterday"])
     assert rc == 0
 
     out = capsys.readouterr().out.splitlines()
@@ -222,6 +241,7 @@ def test_cli_yesterday_includes_backlinked_tasks(tmp_path: Path, monkeypatch, ca
 def test_cli_tomorrow_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
     monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
 
     tomorrow = date.today() + timedelta(days=1)
 
@@ -234,7 +254,7 @@ def test_cli_tomorrow_includes_backlinked_tasks(tmp_path: Path, monkeypatch, cap
         encoding="utf-8",
     )
 
-    rc = main(["tomorrow"])
+    rc = _run_cli(monkeypatch, ["tomorrow"])
     assert rc == 0
 
     out = capsys.readouterr().out.splitlines()
@@ -250,7 +270,7 @@ def test_cli_today_no_color_by_default(tmp_path: Path, monkeypatch, capsys) -> N
     note = tmp_path / f"{today:%Y-%m-%d}.md"
     note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
 
-    rc = main(["today"])
+    rc = _run_cli(monkeypatch, ["today"])
     assert rc == 0
 
     out = capsys.readouterr().out
@@ -266,7 +286,7 @@ def test_cli_today_uses_colors_from_env(tmp_path: Path, monkeypatch, capsys) -> 
     note = tmp_path / f"{today:%Y-%m-%d}.md"
     note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
 
-    rc = main(["today"])
+    rc = _run_cli(monkeypatch, ["today"])
     assert rc == 0
 
     out = capsys.readouterr().out
@@ -282,7 +302,7 @@ def test_cli_today_uses_colors_from_ot_env(tmp_path: Path, monkeypatch, capsys) 
     note = tmp_path / f"{today:%Y-%m-%d}.md"
     note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
 
-    rc = main(["today"])
+    rc = _run_cli(monkeypatch, ["today"])
     assert rc == 0
 
     out = capsys.readouterr().out
@@ -303,8 +323,59 @@ def test_cli_today_uses_colors_from_dotenv(tmp_path: Path, monkeypatch, capsys) 
     note = tmp_path / f"{today:%Y-%m-%d}.md"
     note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
 
-    rc = main(["today"])
+    rc = _run_cli(monkeypatch, ["today"], disable_dotenv=False)
     assert rc == 0
 
     out = capsys.readouterr().out
     assert out == f"{ANSI_RED}[ ]{ANSI_RESET} local\n"
+
+
+def test_cli_all_lists_tasks_across_vault(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    (tmp_path / "A.md").write_text(
+        """# A
+
+- [ ] a1
+not a task
+    - [x] a2
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "B.md").write_text(
+        """# B
+
+* [ ] b1 [[Some Note]]
+""",
+        encoding="utf-8",
+    )
+
+    rc = _run_cli(monkeypatch, ["all"])
+    assert rc == 0
+
+    # We don't assert ordering, just presence; wikilinks are stripped.
+    out = capsys.readouterr().out.splitlines()
+    assert sorted(out) == sorted(["[ ] a1", "[x] a2", "[ ] b1"])
+
+
+def test_cli_all_json_includes_file_text_and_line_number(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    import json
+
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    (tmp_path / "A.md").write_text("- [ ] a1\n", encoding="utf-8")
+    (tmp_path / "B.md").write_text("- [x] b1\n", encoding="utf-8")
+
+    rc = _run_cli(monkeypatch, ["all", "--json"])
+    assert rc == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert isinstance(payload, list)
+    assert {p["text"] for p in payload} == {"[ ] a1", "[x] b1"}
+    assert all("file" in p for p in payload)
+    assert all("line_number" in p for p in payload)
+    assert {p["line_number"] for p in payload} == {1}
