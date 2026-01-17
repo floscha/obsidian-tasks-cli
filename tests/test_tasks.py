@@ -7,8 +7,10 @@ from obsidian_tasks.cli import (
     ANSI_RED,
     ANSI_RESET,
     colorize_checkbox_prefix,
+    main,
 )
 from obsidian_tasks.tasks import (
+    extract_backlinked_tasks,
     extract_tasks_from_file,
     extract_tasks_from_today_note,
     is_markdown_task_line,
@@ -110,3 +112,86 @@ def test_colorize_checkbox_prefix() -> None:
     assert colorize_checkbox_prefix("[?] maybe") == "[?] maybe"
     # Not a bracket token stays unchanged
     assert colorize_checkbox_prefix("hello") == "hello"
+
+
+def test_extract_backlinked_tasks_finds_tasks_across_vault(tmp_path: Path) -> None:
+    vault = tmp_path
+
+    # The note we are linking to
+    note = vault / "Project X.md"
+    note.write_text("# Project X\n\n- [ ] local task\n", encoding="utf-8")
+
+    other = vault / "Other.md"
+    other.write_text(
+        """# Other
+
+- [ ] unrelated
+- [ ] mentions [[Project X]]
+not a task [[Project X]]
+    - [x] indented task with [[Project X]]
+""",
+        encoding="utf-8",
+    )
+
+    nested_dir = vault / "Area"
+    nested_dir.mkdir()
+    nested = nested_dir / "Nested.md"
+    nested.write_text(
+        """# Nested
+
+* [ ] bullet mentions [[Project X]]
+""",
+        encoding="utf-8",
+    )
+
+    tasks = extract_backlinked_tasks(vault_root=vault, note_path=note)
+    assert sorted(t.text for t in tasks) == sorted(
+        [
+            "- [ ] mentions [[Project X]]",
+            "- [x] indented task with [[Project X]]",
+            "* [ ] bullet mentions [[Project X]]",
+        ]
+    )
+
+
+def test_extract_backlinked_tasks_can_exclude_note_itself(tmp_path: Path) -> None:
+    vault = tmp_path
+    note = vault / "Note.md"
+    note.write_text(
+        """# Note
+
+- [ ] self task mentions [[Note]]
+""",
+        encoding="utf-8",
+    )
+    other = vault / "Other.md"
+    other.write_text("- [ ] other mentions [[Note]]\n", encoding="utf-8")
+
+    tasks = extract_backlinked_tasks(
+        vault_root=vault, note_path=note, include_note_tasks=False
+    )
+    assert [t.text for t in tasks] == ["- [ ] other mentions [[Note]]"]
+
+
+def test_cli_today_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys) -> None:
+    # Arrange a minimal vault + today's note.
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    # Ensure the CLI looks in the vault root for the daily note.
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+
+    today = date.today()
+    note = tmp_path / f"{today:%Y-%m-%d}.md"
+    note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
+
+    other = tmp_path / "Work.md"
+    other.write_text(f"- [ ] follow up [[{today:%Y-%m-%d}]]\n", encoding="utf-8")
+
+    # Act
+    rc = main(["today"])
+    assert rc == 0
+
+    # Assert: output includes both tasks (order doesn't matter)
+    out = capsys.readouterr().out.splitlines()
+    assert sorted(out) == sorted(
+        ["[ ] local", "[ ] follow up"]
+    )

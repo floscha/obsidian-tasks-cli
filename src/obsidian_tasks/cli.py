@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
+from datetime import date
 from pathlib import Path
 
 from obsidian_tasks import tasks as tasks_mod
@@ -12,6 +14,20 @@ ANSI_RED = "\x1b[31m"
 ANSI_GREEN = "\x1b[32m"
 ANSI_GREY = "\x1b[90m"
 ANSI_RESET = "\x1b[0m"
+
+
+_WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+
+
+def _strip_wikilinks(text: str) -> str:
+    """Remove Obsidian wiki links from text.
+
+    Example: "Do thing for [[2026-01-17]]" -> "Do thing for"
+    """
+
+    # Remove the whole wikilink token, then normalize whitespace.
+    without = _WIKILINK_RE.sub("", text)
+    return " ".join(without.split())
 
 
 def colorize_checkbox_prefix(text: str) -> str:
@@ -77,13 +93,45 @@ def _cmd_inbox(args: argparse.Namespace) -> int:
 
 
 def _cmd_today(args: argparse.Namespace) -> int:
-    tasks = tasks_mod.extract_tasks_from_today_note()
+    # Today's note tasks + backlink tasks across the vault that reference today's note.
+    vault_root = os.environ.get("OT_VAULT_PATH")
+    calendar_dir = os.environ.get("OT_CALENDAR_DIR")
+
+    today = date.today()
+
+    note_path = tasks_mod.resolve_calendar_daily_note_path(
+        vault_path=vault_root, calendar_dir=calendar_dir, for_date=today
+    )
+
+    tasks = tasks_mod.extract_tasks_from_today_note(
+        vault_path=vault_root, calendar_dir=calendar_dir, for_date=today
+    )
+    if vault_root:
+        tasks.extend(
+            tasks_mod.extract_backlinked_tasks(
+                vault_root=vault_root,
+                note_path=note_path,
+                include_note_tasks=False,
+            )
+        )
+
+    # Deduplicate in case the same task line gets included twice.
+    seen: set[tuple[str, int]] = set()
+    deduped: list[tasks_mod.Task] = []
+    for t in tasks:
+        key = (str(t.file), t.line_no)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(t)
+    tasks = deduped
 
     def display_text(raw: str) -> str:
         # Omit everything before the first '[' (e.g. '- ' or '* '), keep the checkbox.
         s = raw.lstrip()
         i = s.find("[")
-        return s[i:].strip() if i != -1 else s.strip()
+        shown = s[i:].strip() if i != -1 else s.strip()
+        return _strip_wikilinks(shown)
 
     if args.json:
         import json

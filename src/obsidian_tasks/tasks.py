@@ -114,3 +114,55 @@ def extract_tasks_from_today_note(
     if not note.exists() or not note.is_file():
         return []
     return extract_tasks_from_file(note)
+
+
+def extract_backlinked_tasks(
+    *,
+    vault_root: str | Path,
+    note_path: str | Path,
+    include_note_tasks: bool = True,
+) -> list[Task]:
+    """Extract tasks that reference a given note via an Obsidian wikilink.
+
+    A backlink task is any markdown task line that contains
+    `[[<note_stem>]]`, where `note_stem` is the filename of the note without
+    the `.md` extension.
+
+    Args:
+        vault_root: The Obsidian vault root directory to search.
+        note_path: The note file path (usually inside the vault). Only its stem
+            is used for matching.
+        include_note_tasks: If False, tasks in `note_path` itself are excluded.
+
+    Returns:
+        A list of tasks (deduplicated by file+line).
+    """
+
+    vault = Path(vault_root).expanduser()
+    note = Path(note_path).expanduser()
+    needle = f"[[{note.stem}]]"
+
+    out: list[Task] = []
+    seen: set[tuple[Path, int]] = set()
+
+    for md in iter_markdown_files(vault):
+        if not include_note_tasks and md.resolve() == note.resolve():
+            continue
+
+        try:
+            content = md.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            content = md.read_text(encoding="utf-8", errors="replace")
+
+        for idx, line in enumerate(content.splitlines(), start=1):
+            if needle not in line:
+                continue
+            if not is_markdown_task_line(line):
+                continue
+            key = (md, idx)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(Task(file=md, line_no=idx, raw=line.rstrip("\n")))
+
+    return out
