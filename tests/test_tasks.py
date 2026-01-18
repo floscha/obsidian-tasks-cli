@@ -13,8 +13,11 @@ from obsidian_tasks.tasks import (
     extract_backlinked_tasks,
     extract_tasks_from_file,
     extract_tasks_from_today_note,
+    filter_tasks_by_status,
+    filter_tasks_by_statuses,
     is_markdown_task_line,
     resolve_calendar_daily_note_path,
+    task_status_from_line,
 )
 
 
@@ -69,6 +72,60 @@ not a task
     tasks = extract_tasks_from_file(f)
     assert [t.text for t in tasks] == ["- [ ] first", "- [x] second"]
     assert [t.line_no for t in tasks] == [3, 5]
+
+
+def test_task_status_from_line() -> None:
+    assert task_status_from_line("- [ ] open") == "open"
+    assert task_status_from_line("- [x] done") == "done"
+    assert task_status_from_line("- [X] done") == "done"
+    assert task_status_from_line("- [-] cancelled") == "cancelled"
+
+    # Not a task line
+    assert task_status_from_line("hello") is None
+    # Unrecognized checkbox token
+    assert task_status_from_line("- [?] maybe") is None
+
+
+def test_filter_tasks_by_status(tmp_path: Path) -> None:
+    f = tmp_path / "a.md"
+    f.write_text(
+        """- [ ] one
+- [x] two
+- [-] three
+""",
+        encoding="utf-8",
+    )
+
+    tasks = extract_tasks_from_file(f)
+    assert [t.text for t in filter_tasks_by_status(tasks, status=None)] == [
+        "- [ ] one",
+        "- [x] two",
+        "- [-] three",
+    ]
+    assert [t.text for t in filter_tasks_by_status(tasks, status="open")] == [
+        "- [ ] one"
+    ]
+    assert [t.text for t in filter_tasks_by_status(tasks, status="done")] == [
+        "- [x] two"
+    ]
+    assert [t.text for t in filter_tasks_by_status(tasks, status="cancelled")] == [
+        "- [-] three"
+    ]
+
+
+def test_filter_tasks_by_statuses_multiple(tmp_path: Path) -> None:
+    f = tmp_path / "a.md"
+    f.write_text(
+        """- [ ] one
+- [x] two
+- [-] three
+""",
+        encoding="utf-8",
+    )
+
+    tasks = extract_tasks_from_file(f)
+    kept = filter_tasks_by_statuses(tasks, statuses=["done", "cancelled"])
+    assert [t.text for t in kept] == ["- [x] two", "- [-] three"]
 
 
 def test_display_text_strips_prefix() -> None:
@@ -213,6 +270,52 @@ def test_cli_today_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys
     assert sorted(out) == sorted(
         ["[ ] local", "[ ] follow up"]
     )
+
+
+def test_cli_today_status_filter_open(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    today = date.today()
+    note = tmp_path / f"{today:%Y-%m-%d}.md"
+    note.write_text(
+        """# Today
+
+- [ ] open one
+- [x] done one
+- [-] cancelled one
+""",
+        encoding="utf-8",
+    )
+
+    rc = _run_cli(monkeypatch, ["today", "--status", "open"])
+    assert rc == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["[ ] open one"]
+
+
+def test_cli_today_status_filter_multiple(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    today = date.today()
+    note = tmp_path / f"{today:%Y-%m-%d}.md"
+    note.write_text(
+        """# Today
+
+- [ ] open one
+- [x] done one
+- [-] cancelled one
+""",
+        encoding="utf-8",
+    )
+
+    rc = _run_cli(monkeypatch, ["today", "--status", "done,cancelled"])
+    assert rc == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["[x] done one", "[-] cancelled one"]
 
 
 def test_cli_yesterday_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys) -> None:

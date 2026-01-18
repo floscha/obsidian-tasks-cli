@@ -19,6 +19,13 @@ ANSI_RESET = "\x1b[0m"
 _WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 
 
+def _parse_statuses(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    parts = [p.strip() for p in raw.split(",")]
+    return [p for p in parts if p]
+
+
 def _env_truthy(name: str) -> bool:
     """Interpret an environment variable as a boolean.
 
@@ -100,6 +107,9 @@ def _cmd_inbox(args: argparse.Namespace) -> int:
     root = Path(args.path).expanduser()
 
     tasks = tasks_mod.extract_tasks(root)
+    tasks = tasks_mod.filter_tasks_by_statuses(
+        tasks, statuses=_parse_statuses(getattr(args, "status", None))
+    )
 
     def display_text(raw: str) -> str:
         # Omit everything before the first '[' (e.g. '- ' or '* '), keep the checkbox.
@@ -180,6 +190,10 @@ def _cmd_day_offset(args: argparse.Namespace, *, offset_days: int) -> int:
         deduped.append(t)
     tasks = deduped
 
+    tasks = tasks_mod.filter_tasks_by_statuses(
+        tasks, statuses=_parse_statuses(getattr(args, "status", None))
+    )
+
     def display_text(raw: str) -> str:
         # Omit everything before the first '[' (e.g. '- ' or '* '), keep the checkbox.
         s = raw.lstrip()
@@ -233,6 +247,9 @@ def _cmd_all(args: argparse.Namespace) -> int:
         )
 
     tasks = tasks_mod.extract_tasks(Path(vault_root).expanduser())
+    tasks = tasks_mod.filter_tasks_by_statuses(
+        tasks, statuses=_parse_statuses(getattr(args, "status", None))
+    )
 
     def display_text(raw: str) -> str:
         # Omit everything before the first '[' (e.g. '- ' or '* '), keep the checkbox.
@@ -288,6 +305,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inbox.add_argument("--json", action="store_true", help="Output JSON")
     inbox.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    inbox.add_argument(
+        "--status",
+        help=(
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'You can pass multiple, comma-separated (e.g. "done,cancelled").'
+        ),
+    )
     inbox.set_defaults(func=_cmd_inbox)
 
     today = sub.add_parser(
@@ -296,6 +320,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     today.add_argument("--json", action="store_true", help="Output JSON")
     today.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    today.add_argument(
+        "--status",
+        help=(
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'You can pass multiple, comma-separated (e.g. "done,cancelled").'
+        ),
+    )
     today.set_defaults(func=_cmd_today)
 
     yesterday = sub.add_parser(
@@ -304,6 +335,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     yesterday.add_argument("--json", action="store_true", help="Output JSON")
     yesterday.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    yesterday.add_argument(
+        "--status",
+        help=(
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'You can pass multiple, comma-separated (e.g. "done,cancelled").'
+        ),
+    )
     yesterday.set_defaults(func=_cmd_yesterday)
 
     tomorrow = sub.add_parser(
@@ -312,6 +350,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tomorrow.add_argument("--json", action="store_true", help="Output JSON")
     tomorrow.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    tomorrow.add_argument(
+        "--status",
+        help=(
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'You can pass multiple, comma-separated (e.g. "done,cancelled").'
+        ),
+    )
     tomorrow.set_defaults(func=_cmd_tomorrow)
 
     all_cmd = sub.add_parser(
@@ -320,6 +365,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     all_cmd.add_argument("--json", action="store_true", help="Output JSON")
     all_cmd.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    all_cmd.add_argument(
+        "--status",
+        help=(
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'You can pass multiple, comma-separated (e.g. "done,cancelled").'
+        ),
+    )
     all_cmd.set_defaults(func=_cmd_all)
 
     return parser

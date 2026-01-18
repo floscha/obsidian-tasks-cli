@@ -4,7 +4,66 @@ import os
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, TypeAlias
+
+TaskStatus: TypeAlias = str  # Literal would be nicer, but keep deps minimal.
+
+
+def task_status_from_line(line: str) -> TaskStatus | None:
+    """Return the status encoded in a markdown checkbox.
+
+    Recognized:
+    - open: "- [ ] ..."
+    - done: "- [x] ..." (case-insensitive)
+    - cancelled: "- [-] ..."
+
+    Returns None if the line is not a markdown task or if the checkbox token is
+    not one of the recognized statuses.
+    """
+
+    if not is_markdown_task_line(line):
+        return None
+
+    s = line.lstrip()
+    token = s[2:5]  # e.g. "[ ]", "[x]", "[-]" (after leading "- ")
+
+    if token == "[ ]":
+        return "open"
+    if token.lower() == "[x]":
+        return "done"
+    if token == "[-]":
+        return "cancelled"
+    return None
+
+
+def filter_tasks_by_status(tasks: Iterable[Task], *, status: TaskStatus | None) -> list[Task]:
+    """Filter tasks by checkbox status.
+
+    If status is None, returns all tasks.
+    """
+
+    if status is None:
+        return list(tasks)
+
+    return [t for t in tasks if task_status_from_line(t.raw) == status]
+
+
+def filter_tasks_by_statuses(
+    tasks: Iterable[Task], *, statuses: Iterable[TaskStatus] | None
+) -> list[Task]:
+    """Filter tasks by multiple checkbox statuses.
+
+    If statuses is None, returns all tasks.
+    """
+
+    if statuses is None:
+        return list(tasks)
+
+    wanted = {s for s in statuses if s}
+    if not wanted:
+        return []
+
+    return [t for t in tasks if (st := task_status_from_line(t.raw)) is not None and st in wanted]
 
 
 @dataclass(frozen=True)
