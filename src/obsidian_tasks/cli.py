@@ -286,6 +286,66 @@ def _cmd_all(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_note(args: argparse.Namespace) -> int:
+    """List tasks contained in a specific note looked up by filename stem."""
+
+    vault_root = os.environ.get("OT_VAULT_PATH")
+    if not vault_root:
+        raise KeyError(
+            "OT_VAULT_PATH is required for the 'note' command (set it in your environment or .env)"
+        )
+
+    note_name = str(getattr(args, "name", "")).strip()
+    if not note_name:
+        sys.stderr.write("note name is required\n")
+        return 2
+
+    matches = tasks_mod.find_notes_by_name(vault_root=vault_root, note_name=note_name)
+    if not matches:
+        sys.stderr.write(f"no note found named '{note_name}.md' in vault\n")
+        return 2
+
+    tasks: list[tasks_mod.Task] = []
+    for p in matches:
+        tasks.extend(tasks_mod.extract_tasks_from_file(p))
+
+    tasks = tasks_mod.filter_tasks_by_statuses(
+        tasks, statuses=_parse_statuses(getattr(args, "status", None))
+    )
+
+    def display_text(raw: str) -> str:
+        s = raw.lstrip()
+        i = s.find("[")
+        shown = s[i:].strip() if i != -1 else s.strip()
+        return _strip_wikilinks(shown)
+
+    if args.json:
+        import json
+
+        payload = [
+            {
+                "file": str(t.file),
+                "line_number": t.line_no,
+                "text": display_text(t.raw),
+            }
+            for t in tasks
+        ]
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        return 0
+
+    if not tasks:
+        return 0
+
+    use_color = _use_colors(args)
+    for t in tasks:
+        text = display_text(t.raw)
+        if use_color:
+            text = colorize_checkbox_prefix(text)
+        sys.stdout.write(f"{text}\n")
+
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     # During test runs, avoid pulling local developer defaults from a repo .env.
     # Tests should control env vars explicitly via monkeypatch.
@@ -373,6 +433,27 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     all_cmd.set_defaults(func=_cmd_all)
+
+    note = sub.add_parser(
+        "note",
+        help=(
+            "List Markdown tasks in a note by name (searches vault for <name>.md and prints tasks)"
+        ),
+    )
+    note.add_argument(
+        "name",
+        help="Note name (filename without .md extension).",
+    )
+    note.add_argument("--json", action="store_true", help="Output JSON")
+    note.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    note.add_argument(
+        "--status",
+        help=(
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'You can pass multiple, comma-separated (e.g. "done,cancelled").'
+        ),
+    )
+    note.set_defaults(func=_cmd_note)
 
     return parser
 

@@ -225,3 +225,39 @@ def extract_backlinked_tasks(
             out.append(Task(file=md, line_no=idx, raw=line.rstrip("\n")))
 
     return out
+
+
+def find_notes_by_name(*, vault_root: str | Path, note_name: str) -> list[Path]:
+    """Find notes named `<note_name>.md` anywhere in the vault.
+
+    Args:
+        vault_root: The Obsidian vault root directory to search.
+        note_name: Filename stem to search for (without `.md`).
+
+    Returns:
+        A list of matching paths (sorted). Empty if none.
+    """
+
+    vault = Path(vault_root).expanduser()
+    if not vault.exists() or not vault.is_dir():
+        return []
+
+    wanted = note_name.strip()
+    if not wanted:
+        return []
+
+    matches = [p for p in vault.rglob("*.md") if p.is_file() and p.stem == wanted]
+    return sorted(matches)
+
+
+def extract_tasks_from_note_name(*, vault_root: str | Path, note_name: str) -> list[Task]:
+    """Extract tasks from notes matching a given note name.
+
+    If multiple notes match (same filename stem in different folders), tasks are
+    extracted from all of them.
+    """
+
+    out: list[Task] = []
+    for p in find_notes_by_name(vault_root=vault_root, note_name=note_name):
+        out.extend(extract_tasks_from_file(p))
+    return out

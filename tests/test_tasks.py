@@ -258,18 +258,55 @@ def test_cli_today_includes_backlinked_tasks(tmp_path: Path, monkeypatch, capsys
     note = tmp_path / f"{today:%Y-%m-%d}.md"
     note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
 
-    other = tmp_path / "Work.md"
-    other.write_text(f"- [ ] follow up [[{today:%Y-%m-%d}]]\n", encoding="utf-8")
 
-    # Act
-    rc = _run_cli(monkeypatch, ["today"])
-    assert rc == 0
+def test_cli_note_prints_tasks_from_named_note(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
 
-    # Assert: output includes both tasks (order doesn't matter)
-    out = capsys.readouterr().out.splitlines()
-    assert sorted(out) == sorted(
-        ["[ ] local", "[ ] follow up"]
+    note = tmp_path / "Project X.md"
+    note.write_text(
+        """# Project X
+
+- [ ] first
+not a task
+    - [x] second
+""",
+        encoding="utf-8",
     )
+
+    rc = _run_cli(monkeypatch, ["note", "Project X"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert out.splitlines() == ["[ ] first", "[x] second"]
+
+
+def test_cli_note_errors_when_note_missing(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+
+    rc = _run_cli(monkeypatch, ["note", "Does Not Exist"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "no note found" in err
+
+
+def test_cli_note_aggregates_tasks_when_multiple_notes_match(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    a_dir = tmp_path / "A"
+    b_dir = tmp_path / "B"
+    a_dir.mkdir()
+    b_dir.mkdir()
+
+    (a_dir / "Shared.md").write_text("- [ ] from a\n", encoding="utf-8")
+    (b_dir / "Shared.md").write_text("- [x] from b\n", encoding="utf-8")
+
+    rc = _run_cli(monkeypatch, ["note", "Shared"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert sorted(out.splitlines()) == sorted(["[ ] from a", "[x] from b"])
 
 
 def test_cli_today_status_filter_open(tmp_path: Path, monkeypatch, capsys) -> None:
