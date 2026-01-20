@@ -346,6 +346,43 @@ def _cmd_note(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_add(args: argparse.Namespace) -> int:
+    """Append a task to a chosen note."""
+
+    vault_root = os.environ.get("OT_VAULT_PATH")
+    if not vault_root:
+        raise KeyError(
+            "OT_VAULT_PATH is required for the 'add' command (set it in your environment or .env)"
+        )
+
+    text = str(getattr(args, "text", "")).strip()
+    if not text:
+        sys.stderr.write("task text is required\n")
+        return 2
+
+    note_name = getattr(args, "note", None) or os.environ.get("OT_DEFAULT_ADD_NOTE")
+    note_name = str(note_name or "").strip()
+    if not note_name:
+        sys.stderr.write(
+            "note name is required (use --note or set OT_DEFAULT_ADD_NOTE)\n"
+        )
+        return 2
+
+    try:
+        note_path = tasks_mod.append_task_to_note(
+            vault_root=vault_root,
+            note_name=note_name,
+            text=text,
+        )
+    except ValueError as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
+
+    # Keep output minimal and script-friendly.
+    sys.stdout.write(f"{note_path}\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     # During test runs, avoid pulling local developer defaults from a repo .env.
     # Tests should control env vars explicitly via monkeypatch.
@@ -454,6 +491,25 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     note.set_defaults(func=_cmd_note)
+
+    add = sub.add_parser(
+        "add",
+        help="Add a task line to a note",
+    )
+    add.add_argument(
+        "text",
+        help='Task text. If it is not already a markdown task, it will be prefixed with "- [ ] ".',
+    )
+    add.add_argument(
+        "--note",
+        help=(
+            "Target note name (filename without .md). If omitted, uses "
+            "OT_DEFAULT_ADD_NOTE env var. "
+            "The note is searched anywhere in the vault; if not found, a new note is created "
+            "at the vault root."
+        ),
+    )
+    add.set_defaults(func=_cmd_add)
 
     return parser
 

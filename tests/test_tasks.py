@@ -10,6 +10,7 @@ from obsidian_tasks.cli import (
     main,
 )
 from obsidian_tasks.tasks import (
+    append_task_to_note,
     extract_backlinked_tasks,
     extract_tasks_from_file,
     extract_tasks_from_today_note,
@@ -162,6 +163,39 @@ not a task
         vault_path=tmp_path, for_date=date(2026, 1, 16)
     )
     assert [t.text for t in tasks] == ["- [ ] task one", "- [x] task two"]
+
+
+def test_append_task_to_note_creates_note_and_normalizes(tmp_path: Path) -> None:
+    note_path = append_task_to_note(vault_root=tmp_path, note_name="Inbox", text="hello")
+    assert note_path == tmp_path / "Inbox.md"
+    assert note_path.read_text(encoding="utf-8") == "- [ ] hello\n"
+
+
+def test_append_task_to_note_preserves_existing_and_appends_newline(tmp_path: Path) -> None:
+    f = tmp_path / "Inbox.md"
+    f.write_text("# Inbox", encoding="utf-8")  # no trailing newline
+
+    append_task_to_note(vault_root=tmp_path, note_name="Inbox", text="- [ ] second")
+    assert f.read_text(encoding="utf-8") == "# Inbox\n- [ ] second\n"
+
+
+def test_cli_add_uses_default_add_note_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_DEFAULT_ADD_NOTE", "Inbox")
+
+    code = _run_cli(monkeypatch, ["add", "hello from cli"])
+    assert code == 0
+    assert (tmp_path / "Inbox.md").read_text(encoding="utf-8") == "- [ ] hello from cli\n"
+
+
+def test_cli_add_note_flag_overrides_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_DEFAULT_ADD_NOTE", "Inbox")
+
+    code = _run_cli(monkeypatch, ["add", "--note", "Work", "do it"])
+    assert code == 0
+    assert not (tmp_path / "Inbox.md").exists()
+    assert (tmp_path / "Work.md").read_text(encoding="utf-8") == "- [ ] do it\n"
 
 
 def test_colorize_checkbox_prefix() -> None:

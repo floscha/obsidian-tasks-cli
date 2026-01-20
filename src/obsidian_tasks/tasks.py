@@ -9,6 +9,75 @@ from typing import Iterable, TypeAlias
 TaskStatus: TypeAlias = str  # Literal would be nicer, but keep deps minimal.
 
 
+def resolve_note_path(*, vault_root: str | Path, note_name: str) -> Path:
+    """Resolve a note path from a note name (filename stem).
+
+    If the note exists somewhere in the vault (any folder), we pick the first
+    match in sorted order.
+
+    If it doesn't exist yet, we default to creating it at the vault root as
+    `<note_name>.md`.
+    """
+
+    vault = Path(vault_root).expanduser()
+    wanted = note_name.strip()
+    if not wanted:
+        raise ValueError("note name is required")
+
+    matches = find_notes_by_name(vault_root=vault, note_name=wanted)
+    if matches:
+        return matches[0]
+
+    return vault / f"{wanted}.md"
+
+
+def normalize_task_text(text: str) -> str:
+    """Normalize free-form text into a markdown task line.
+
+    Rules:
+    - If the user already passed a markdown task line (e.g. "- [ ] ..."), keep it.
+    - Otherwise, prefix with "- [ ] ".
+    - Strip surrounding whitespace and ensure it's non-empty.
+    """
+
+    s = str(text).strip()
+    if not s:
+        raise ValueError("task text is required")
+
+    if is_markdown_task_line(s):
+        return s
+    return f"- [ ] {s}"
+
+
+def append_task_to_note(*, vault_root: str | Path, note_name: str, text: str) -> Path:
+    """Append a task line to a note in the vault.
+
+    Creates the note if needed.
+
+    Returns:
+        Path to the note written.
+    """
+
+    note_path = resolve_note_path(vault_root=vault_root, note_name=note_name)
+    note_path.parent.mkdir(parents=True, exist_ok=True)
+
+    task_line = normalize_task_text(text)
+
+    existing = ""
+    if note_path.exists():
+        try:
+            existing = note_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            existing = note_path.read_text(encoding="utf-8", errors="replace")
+
+    # Ensure we always append on a fresh line.
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+
+    note_path.write_text(existing + task_line + "\n", encoding="utf-8")
+    return note_path
+
+
 def task_status_from_line(line: str) -> TaskStatus | None:
     """Return the status encoded in a markdown checkbox.
 
