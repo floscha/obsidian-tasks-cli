@@ -286,6 +286,72 @@ def _cmd_all(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_overdue(args: argparse.Namespace) -> int:
+    """List tasks that are overdue.
+
+    Overdue tasks are:
+    - tasks found in any past daily note (yyyy-mm-dd.md with date < today)
+    - tasks anywhere in the vault that contain a backlink [[yyyy-mm-dd]] to a past date
+    """
+
+    vault_root = os.environ.get("OT_VAULT_PATH")
+    if not vault_root:
+        raise KeyError(
+            "OT_VAULT_PATH is required for the 'overdue' command "
+            "(set it in your environment or .env)"
+        )
+
+    calendar_dir = os.environ.get("OT_CALENDAR_DIR")
+
+    tasks = tasks_mod.extract_overdue_tasks(
+        vault_root=vault_root,
+        calendar_dir=calendar_dir,
+        today=date.today(),
+    )
+
+    # Overdue is primarily meant for actionable items: default to open tasks.
+    raw_statuses = getattr(args, "status", None)
+    statuses = _parse_statuses(raw_statuses) if raw_statuses is not None else ["open"]
+    tasks = tasks_mod.filter_tasks_by_statuses(
+        tasks, statuses=statuses
+    )
+
+    # Keep output stable-ish: sort by file path then line.
+    tasks = sorted(tasks, key=lambda t: (str(t.file), t.line_no))
+
+    def display_text(raw: str) -> str:
+        s = raw.lstrip()
+        i = s.find("[")
+        shown = s[i:].strip() if i != -1 else s.strip()
+        return _strip_wikilinks(shown)
+
+    if args.json:
+        import json
+
+        payload = [
+            {
+                "file": str(t.file),
+                "line_number": t.line_no,
+                "text": display_text(t.raw),
+            }
+            for t in tasks
+        ]
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        return 0
+
+    if not tasks:
+        return 0
+
+    use_color = _use_colors(args)
+    for t in tasks:
+        text = display_text(t.raw)
+        if use_color:
+            text = colorize_checkbox_prefix(text)
+        sys.stdout.write(f"{text}\n")
+
+    return 0
+
+
 def _cmd_note(args: argparse.Namespace) -> int:
     """List tasks contained in a specific note looked up by filename stem."""
 
@@ -470,6 +536,24 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     all_cmd.set_defaults(func=_cmd_all)
+
+    overdue = sub.add_parser(
+        "overdue",
+        help=(
+            "List overdue tasks: tasks in any past daily note and tasks with a "
+            "[[yyyy-mm-dd]] backlink to a past date"
+        ),
+    )
+    overdue.add_argument("--json", action="store_true", help="Output JSON")
+    overdue.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    overdue.add_argument(
+        "--status",
+        help=(
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'You can pass multiple, comma-separated (e.g. "done,cancelled").'
+        ),
+    )
+    overdue.set_defaults(func=_cmd_overdue)
 
     note = sub.add_parser(
         "note",

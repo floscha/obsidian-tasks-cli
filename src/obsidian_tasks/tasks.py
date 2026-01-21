@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -317,6 +318,144 @@ def find_notes_by_name(*, vault_root: str | Path, note_name: str) -> list[Path]:
 
     matches = [p for p in vault.rglob("*.md") if p.is_file() and p.stem == wanted]
     return sorted(matches)
+
+
+_DATE_STEM_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+_DATE_WIKILINK_RE = re.compile(r"\[\[(\d{4}-\d{2}-\d{2})\]\]")
+
+
+def try_parse_ymd(value: str) -> date | None:
+    """Parse a date in yyyy-mm-dd format, returning None if invalid."""
+
+    s = str(value).strip()
+    m = _DATE_STEM_RE.match(s)
+    if not m:
+        return None
+    try:
+        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+
+
+def iter_daily_notes(
+    *,
+    vault_root: str | Path,
+    calendar_dir: str | None = None,
+) -> Iterable[tuple[date, Path]]:
+    """Yield (date, path) for daily notes in the Calendar folder.
+
+    Daily notes are Markdown files named yyyy-mm-dd.md.
+    """
+
+    vault = Path(vault_root).expanduser()
+    cal = (calendar_dir or "").strip().strip("/")
+    root = vault / cal if cal else vault
+    if not root.exists() or not root.is_dir():
+        return
+
+    for p in sorted(root.glob("*.md")):
+        if not p.is_file():
+            continue
+        d = try_parse_ymd(p.stem)
+        if d is None:
+            continue
+        yield d, p
+
+
+def extract_tasks_from_past_daily_notes(
+    *,
+    vault_root: str | Path,
+    calendar_dir: str | None = None,
+    today: date | None = None,
+) -> list[Task]:
+    """Extract tasks from all daily notes with date < today."""
+
+    now = today or date.today()
+    out: list[Task] = []
+    for d, p in iter_daily_notes(vault_root=vault_root, calendar_dir=calendar_dir):
+        if d >= now:
+            continue
+        out.extend(extract_tasks_from_file(p))
+    return out
+
+
+def extract_tasks_with_past_date_backlinks(
+    *,
+    vault_root: str | Path,
+    today: date | None = None,
+) -> list[Task]:
+    """Extract tasks that include a [[yyyy-mm-dd]] wikilink to a past date."""
+
+    now = today or date.today()
+    vault = Path(vault_root).expanduser()
+
+    out: list[Task] = []
+    seen: set[tuple[Path, int]] = set()
+
+    for md in iter_markdown_files(vault):
+        try:
+            content = md.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            content = md.read_text(encoding="utf-8", errors="replace")
+
+        for idx, line in enumerate(content.splitlines(), start=1):
+            if not is_markdown_task_line(line):
+                continue
+            links = _DATE_WIKILINK_RE.findall(line)
+            if not links:
+                continue
+            # If any linked date is in the past, treat the task as overdue.
+            is_overdue = False
+            for link in links:
+                d = try_parse_ymd(link)
+                if d is not None and d < now:
+                    is_overdue = True
+                    break
+            if not is_overdue:
+                continue
+
+            key = (md, idx)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(Task(file=md, line_no=idx, raw=line.rstrip("\n")))
+
+    return out
+
+
+def extract_overdue_tasks(
+    *,
+    vault_root: str | Path,
+    calendar_dir: str | None = None,
+    today: date | None = None,
+) -> list[Task]:
+    """Extract overdue tasks.
+
+    Overdue tasks are:
+    - tasks in any past daily note (yyyy-mm-dd.md where date < today)
+    - tasks anywhere in the vault that contain a [[yyyy-mm-dd]] wikilink to a past date
+    """
+
+    now = today or date.today()
+
+    tasks: list[Task] = []
+    tasks.extend(
+        extract_tasks_from_past_daily_notes(
+            vault_root=vault_root, calendar_dir=calendar_dir, today=now
+        )
+    )
+    tasks.extend(extract_tasks_with_past_date_backlinks(vault_root=vault_root, today=now))
+
+    # Deduplicate by file+line.
+    seen: set[tuple[Path, int]] = set()
+    deduped: list[Task] = []
+    for t in tasks:
+        key = (t.file, t.line_no)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(t)
+    return deduped
 
 
 def extract_tasks_from_note_name(*, vault_root: str | Path, note_name: str) -> list[Task]:

@@ -12,6 +12,7 @@ from obsidian_tasks.cli import (
 from obsidian_tasks.tasks import (
     append_task_to_note,
     extract_backlinked_tasks,
+    extract_overdue_tasks,
     extract_tasks_from_file,
     extract_tasks_from_today_note,
     filter_tasks_by_status,
@@ -553,3 +554,123 @@ def test_cli_all_json_includes_file_text_and_line_number(
     assert all("file" in p for p in payload)
     assert all("line_number" in p for p in payload)
     assert {p["line_number"] for p in payload} == {1}
+
+
+def test_extract_overdue_tasks_includes_past_daily_notes_and_past_backlinks(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    tomorrow = today + timedelta(days=1)
+
+    # Past daily note (overdue)
+    (tmp_path / f"{yesterday:%Y-%m-%d}.md").write_text(
+        "# Yesterday\n\n- [ ] overdue from daily\n",
+        encoding="utf-8",
+    )
+    # Today's note (not overdue)
+    (tmp_path / f"{today:%Y-%m-%d}.md").write_text(
+        "# Today\n\n- [ ] today local\n",
+        encoding="utf-8",
+    )
+    # Future note (not overdue)
+    (tmp_path / f"{tomorrow:%Y-%m-%d}.md").write_text(
+        "# Tomorrow\n\n- [ ] future local\n",
+        encoding="utf-8",
+    )
+
+    # Backlink in some other note
+    (tmp_path / "Work.md").write_text(
+        "\n".join(
+            [
+                f"- [ ] follow up [[{yesterday:%Y-%m-%d}]]",
+                f"- [ ] scheduled [[{tomorrow:%Y-%m-%d}]]",
+                "- [ ] invalid backlink [[2026-99-99]]",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    tasks = extract_overdue_tasks(
+        vault_root=tmp_path,
+        calendar_dir="",
+        today=today,
+    )
+
+    texts = sorted(t.text for t in tasks)
+    assert "- [ ] overdue from daily" in texts
+    assert f"- [ ] follow up [[{yesterday:%Y-%m-%d}]]" in texts
+
+    # Not overdue
+    assert "- [ ] today local" not in texts
+    assert "- [ ] future local" not in texts
+    assert f"- [ ] scheduled [[{tomorrow:%Y-%m-%d}]]" not in texts
+    assert "- [ ] invalid backlink [[2026-99-99]]" not in texts
+
+
+def test_cli_overdue_lists_overdue_tasks(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    (tmp_path / f"{yesterday:%Y-%m-%d}.md").write_text(
+        "# Yesterday\n\n- [ ] overdue from daily\n- [x] done from daily\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "Work.md").write_text(
+        f"- [ ] follow up [[{yesterday:%Y-%m-%d}]]\n",
+        encoding="utf-8",
+    )
+
+    rc = _run_cli(monkeypatch, ["overdue"])
+    assert rc == 0
+    out = capsys.readouterr().out.splitlines()
+    # We don't require exact ordering, just presence. Wikilinks are stripped.
+    assert "[ ] overdue from daily" in out
+    assert "[ ] follow up" in out
+    assert "[x] done from daily" not in out
+
+
+def test_cli_overdue_status_filter_open(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    (tmp_path / f"{yesterday:%Y-%m-%d}.md").write_text(
+        "# Yesterday\n\n- [ ] open one\n- [x] done one\n- [-] cancelled one\n",
+        encoding="utf-8",
+    )
+
+    rc = _run_cli(monkeypatch, ["overdue", "--status", "open"])
+    assert rc == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["[ ] open one"]
+
+
+def test_cli_overdue_status_filter_can_include_done(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    (tmp_path / f"{yesterday:%Y-%m-%d}.md").write_text(
+        "# Yesterday\n\n- [ ] open one\n- [x] done one\n",
+        encoding="utf-8",
+    )
+
+    rc = _run_cli(monkeypatch, ["overdue", "--status", "open,done"])
+    assert rc == 0
+    out = capsys.readouterr().out.splitlines()
+    assert sorted(out) == sorted(["[ ] open one", "[x] done one"])
