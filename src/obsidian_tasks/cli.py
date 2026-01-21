@@ -75,7 +75,7 @@ def _strip_wikilinks(text: str) -> str:
 def colorize_checkbox_prefix(text: str) -> str:
     """Colorize the leading checkbox token in a normalized task string.
 
-    Expects the string to start with a checkbox token like "[ ]" / "[x]" / "[-]".
+    Expects the string to start with a checkbox token like "[ ]" / "[x]" / "[-]" / "[>]".
     If the format doesn't match, returns the string unchanged.
     """
 
@@ -90,6 +90,8 @@ def colorize_checkbox_prefix(text: str) -> str:
     if token.lower() == "[x]":
         return f"{ANSI_GREEN}{token}{ANSI_RESET}{rest}"
     if token == "[-]":
+        return f"{ANSI_GREY}{token}{ANSI_RESET}{rest}"
+    if token == "[>]":
         return f"{ANSI_GREY}{token}{ANSI_RESET}{rest}"
 
     return text
@@ -471,7 +473,8 @@ def build_parser() -> argparse.ArgumentParser:
     inbox.add_argument(
         "--status",
         help=(
-            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
+            '"scheduled" (- [>]). '
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
         ),
     )
@@ -486,7 +489,8 @@ def build_parser() -> argparse.ArgumentParser:
     today.add_argument(
         "--status",
         help=(
-            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
+            '"scheduled" (- [>]). '
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
         ),
     )
@@ -501,7 +505,8 @@ def build_parser() -> argparse.ArgumentParser:
     yesterday.add_argument(
         "--status",
         help=(
-            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
+            '"scheduled" (- [>]). '
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
         ),
     )
@@ -516,7 +521,8 @@ def build_parser() -> argparse.ArgumentParser:
     tomorrow.add_argument(
         "--status",
         help=(
-            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
+            '"scheduled" (- [>]). '
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
         ),
     )
@@ -531,7 +537,8 @@ def build_parser() -> argparse.ArgumentParser:
     all_cmd.add_argument(
         "--status",
         help=(
-            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
+            '"scheduled" (- [>]). '
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
         ),
     )
@@ -549,7 +556,8 @@ def build_parser() -> argparse.ArgumentParser:
     overdue.add_argument(
         "--status",
         help=(
-            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
+            '"scheduled" (- [>]). '
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
         ),
     )
@@ -570,7 +578,8 @@ def build_parser() -> argparse.ArgumentParser:
     note.add_argument(
         "--status",
         help=(
-            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]). '
+            'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
+            '"scheduled" (- [>]). '
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
         ),
     )

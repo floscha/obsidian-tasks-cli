@@ -86,6 +86,7 @@ def task_status_from_line(line: str) -> TaskStatus | None:
     - open: "- [ ] ..."
     - done: "- [x] ..." (case-insensitive)
     - cancelled: "- [-] ..."
+    - scheduled: "- [>] ..."
 
     Returns None if the line is not a markdown task or if the checkbox token is
     not one of the recognized statuses.
@@ -103,6 +104,8 @@ def task_status_from_line(line: str) -> TaskStatus | None:
         return "done"
     if token == "[-]":
         return "cancelled"
+    if token == "[>]":
+        return "scheduled"
     return None
 
 

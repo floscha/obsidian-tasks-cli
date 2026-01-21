@@ -81,6 +81,7 @@ def test_task_status_from_line() -> None:
     assert task_status_from_line("- [x] done") == "done"
     assert task_status_from_line("- [X] done") == "done"
     assert task_status_from_line("- [-] cancelled") == "cancelled"
+    assert task_status_from_line("- [>] scheduled") == "scheduled"
 
     # Not a task line
     assert task_status_from_line("hello") is None
@@ -94,6 +95,7 @@ def test_filter_tasks_by_status(tmp_path: Path) -> None:
         """- [ ] one
 - [x] two
 - [-] three
+ - [>] four
 """,
         encoding="utf-8",
     )
@@ -103,6 +105,7 @@ def test_filter_tasks_by_status(tmp_path: Path) -> None:
         "- [ ] one",
         "- [x] two",
         "- [-] three",
+        "- [>] four",
     ]
     assert [t.text for t in filter_tasks_by_status(tasks, status="open")] == [
         "- [ ] one"
@@ -113,6 +116,9 @@ def test_filter_tasks_by_status(tmp_path: Path) -> None:
     assert [t.text for t in filter_tasks_by_status(tasks, status="cancelled")] == [
         "- [-] three"
     ]
+    assert [t.text for t in filter_tasks_by_status(tasks, status="scheduled")] == [
+        "- [>] four"
+    ]
 
 
 def test_filter_tasks_by_statuses_multiple(tmp_path: Path) -> None:
@@ -121,13 +127,14 @@ def test_filter_tasks_by_statuses_multiple(tmp_path: Path) -> None:
         """- [ ] one
 - [x] two
 - [-] three
+ - [>] four
 """,
         encoding="utf-8",
     )
 
     tasks = extract_tasks_from_file(f)
-    kept = filter_tasks_by_statuses(tasks, statuses=["done", "cancelled"])
-    assert [t.text for t in kept] == ["- [x] two", "- [-] three"]
+    kept = filter_tasks_by_statuses(tasks, statuses=["done", "cancelled", "scheduled"])
+    assert [t.text for t in kept] == ["- [x] two", "- [-] three", "- [>] four"]
 
 
 def test_display_text_strips_prefix() -> None:
@@ -215,6 +222,10 @@ def test_colorize_checkbox_prefix() -> None:
     assert (
         colorize_checkbox_prefix("[-] cancelled")
         == f"{ANSI_GREY}[-]{ANSI_RESET} cancelled"
+    )
+    assert (
+        colorize_checkbox_prefix("[>] scheduled")
+        == f"{ANSI_GREY}[>]{ANSI_RESET} scheduled"
     )
 
     # Unrecognized token stays unchanged
