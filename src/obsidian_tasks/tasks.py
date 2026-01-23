@@ -10,6 +10,43 @@ from typing import Iterable, TypeAlias
 TaskStatus: TypeAlias = str  # Literal would be nicer, but keep deps minimal.
 
 
+# Priority marker format:
+#
+# We treat a task as "priority" if it has a literal " ! " immediately after the
+# closing bracket of the checkbox token, i.e.:
+#   - [ ] ! do the thing
+#            ^^^
+# This is intentionally strict (must be space, exclamation, space).
+
+
+def is_priority_task_line(line: str) -> bool:
+    """Return True if a markdown task line has the priority marker.
+
+    The priority marker is a literal " ! " immediately after the checkbox token.
+    Example:
+        "- [ ] ! important"
+    """
+
+    if not is_markdown_task_line(line):
+        return False
+
+    s = line.lstrip()
+    # After lstrip(), the line starts with "- [" or "* [".
+    # The checkbox token itself is 5 chars starting at index 2, e.g. "[ ]".
+    # The closing bracket is at index 4.
+    return len(s) >= 8 and s[5:8] == " ! "
+
+
+def filter_tasks_by_priority(
+    tasks: Iterable["Task"], *, priority_only: bool = False
+) -> list["Task"]:
+    """Optionally filter tasks to only priority-marked ones."""
+
+    if not priority_only:
+        return list(tasks)
+    return [t for t in tasks if is_priority_task_line(t.raw)]
+
+
 def resolve_note_path(*, vault_root: str | Path, note_name: str) -> Path:
     """Resolve a note path from a note name (filename stem).
 

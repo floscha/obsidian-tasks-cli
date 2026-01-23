@@ -112,6 +112,9 @@ def _cmd_inbox(args: argparse.Namespace) -> int:
     tasks = tasks_mod.filter_tasks_by_statuses(
         tasks, statuses=_parse_statuses(getattr(args, "status", None))
     )
+    tasks = tasks_mod.filter_tasks_by_priority(
+        tasks, priority_only=bool(getattr(args, "priority_only", False))
+    )
 
     def display_text(raw: str) -> str:
         # Omit everything before the first '[' (e.g. '- ' or '* '), keep the checkbox.
@@ -195,6 +198,9 @@ def _cmd_day_offset(args: argparse.Namespace, *, offset_days: int) -> int:
     tasks = tasks_mod.filter_tasks_by_statuses(
         tasks, statuses=_parse_statuses(getattr(args, "status", None))
     )
+    tasks = tasks_mod.filter_tasks_by_priority(
+        tasks, priority_only=bool(getattr(args, "priority_only", False))
+    )
 
     def display_text(raw: str) -> str:
         # Omit everything before the first '[' (e.g. '- ' or '* '), keep the checkbox.
@@ -251,6 +257,9 @@ def _cmd_all(args: argparse.Namespace) -> int:
     tasks = tasks_mod.extract_tasks(Path(vault_root).expanduser())
     tasks = tasks_mod.filter_tasks_by_statuses(
         tasks, statuses=_parse_statuses(getattr(args, "status", None))
+    )
+    tasks = tasks_mod.filter_tasks_by_priority(
+        tasks, priority_only=bool(getattr(args, "priority_only", False))
     )
 
     def display_text(raw: str) -> str:
@@ -317,6 +326,9 @@ def _cmd_overdue(args: argparse.Namespace) -> int:
     tasks = tasks_mod.filter_tasks_by_statuses(
         tasks, statuses=statuses
     )
+    tasks = tasks_mod.filter_tasks_by_priority(
+        tasks, priority_only=bool(getattr(args, "priority_only", False))
+    )
 
     # Keep output stable-ish: sort by file path then line.
     tasks = sorted(tasks, key=lambda t: (str(t.file), t.line_no))
@@ -379,6 +391,9 @@ def _cmd_note(args: argparse.Namespace) -> int:
 
     tasks = tasks_mod.filter_tasks_by_statuses(
         tasks, statuses=_parse_statuses(getattr(args, "status", None))
+    )
+    tasks = tasks_mod.filter_tasks_by_priority(
+        tasks, priority_only=bool(getattr(args, "priority_only", False))
     )
 
     def display_text(raw: str) -> str:
@@ -478,6 +493,14 @@ def build_parser() -> argparse.ArgumentParser:
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
         ),
     )
+    inbox.add_argument(
+        "--priority-only",
+        action="store_true",
+        help=(
+            'Only include tasks with a " ! " immediately after the checkbox token '
+            '(e.g. "- [ ] ! foo")'
+        ),
+    )
     inbox.set_defaults(func=_cmd_inbox)
 
     today = sub.add_parser(
@@ -492,6 +515,14 @@ def build_parser() -> argparse.ArgumentParser:
             'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
             '"scheduled" (- [>]). '
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
+        ),
+    )
+    today.add_argument(
+        "--priority-only",
+        action="store_true",
+        help=(
+            'Only include tasks with a " ! " immediately after the checkbox token '
+            '(e.g. "- [ ] ! foo")'
         ),
     )
     today.set_defaults(func=_cmd_today)
@@ -510,6 +541,14 @@ def build_parser() -> argparse.ArgumentParser:
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
         ),
     )
+    yesterday.add_argument(
+        "--priority-only",
+        action="store_true",
+        help=(
+            'Only include tasks with a " ! " immediately after the checkbox token '
+            '(e.g. "- [ ] ! foo")'
+        ),
+    )
     yesterday.set_defaults(func=_cmd_yesterday)
 
     tomorrow = sub.add_parser(
@@ -526,6 +565,14 @@ def build_parser() -> argparse.ArgumentParser:
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
         ),
     )
+    tomorrow.add_argument(
+        "--priority-only",
+        action="store_true",
+        help=(
+            'Only include tasks with a " ! " immediately after the checkbox token '
+            '(e.g. "- [ ] ! foo")'
+        ),
+    )
     tomorrow.set_defaults(func=_cmd_tomorrow)
 
     all_cmd = sub.add_parser(
@@ -540,6 +587,14 @@ def build_parser() -> argparse.ArgumentParser:
             'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
             '"scheduled" (- [>]). '
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
+        ),
+    )
+    all_cmd.add_argument(
+        "--priority-only",
+        action="store_true",
+        help=(
+            'Only include tasks with a " ! " immediately after the checkbox token '
+            '(e.g. "- [ ] ! foo")'
         ),
     )
     all_cmd.set_defaults(func=_cmd_all)
@@ -559,6 +614,14 @@ def build_parser() -> argparse.ArgumentParser:
             'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
             '"scheduled" (- [>]). '
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
+        ),
+    )
+    overdue.add_argument(
+        "--priority-only",
+        action="store_true",
+        help=(
+            'Only include tasks with a " ! " immediately after the checkbox token '
+            '(e.g. "- [ ] ! foo")'
         ),
     )
     overdue.set_defaults(func=_cmd_overdue)
@@ -581,6 +644,14 @@ def build_parser() -> argparse.ArgumentParser:
             'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
             '"scheduled" (- [>]). '
             'You can pass multiple, comma-separated (e.g. "done,cancelled").'
+        ),
+    )
+    note.add_argument(
+        "--priority-only",
+        action="store_true",
+        help=(
+            'Only include tasks with a " ! " immediately after the checkbox token '
+            '(e.g. "- [ ] ! foo")'
         ),
     )
     note.set_defaults(func=_cmd_note)

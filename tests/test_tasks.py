@@ -15,8 +15,10 @@ from obsidian_tasks.tasks import (
     extract_overdue_tasks,
     extract_tasks_from_file,
     extract_tasks_from_today_note,
+    filter_tasks_by_priority,
     filter_tasks_by_status,
     filter_tasks_by_statuses,
+    is_priority_task_line,
     is_markdown_task_line,
     resolve_calendar_daily_note_path,
     task_status_from_line,
@@ -87,6 +89,35 @@ def test_task_status_from_line() -> None:
     assert task_status_from_line("hello") is None
     # Unrecognized checkbox token
     assert task_status_from_line("- [?] maybe") is None
+
+
+def test_is_priority_task_line_strict_marker() -> None:
+    assert is_priority_task_line("- [ ] ! important")
+    assert is_priority_task_line("    - [x] ! done but important")
+
+    # Strict: must be space + exclamation + space directly after ']'
+    assert not is_priority_task_line("- [ ]! no-space")
+    assert not is_priority_task_line("- [ ] !! double")
+    assert not is_priority_task_line("- [ ]  ! two-spaces-before")
+    assert not is_priority_task_line("- [ ] !")
+
+    # Not a task
+    assert not is_priority_task_line("hello !")
+
+
+def test_filter_tasks_by_priority(tmp_path: Path) -> None:
+    f = tmp_path / "a.md"
+    f.write_text(
+        """- [ ] ! one
+- [ ] two
+- [x] ! three
+""",
+        encoding="utf-8",
+    )
+
+    tasks = extract_tasks_from_file(f)
+    kept = filter_tasks_by_priority(tasks, priority_only=True)
+    assert [t.text for t in kept] == ["- [ ] ! one", "- [x] ! three"]
 
 
 def test_filter_tasks_by_status(tmp_path: Path) -> None:
@@ -204,6 +235,22 @@ def test_cli_add_note_flag_overrides_env(tmp_path: Path, monkeypatch) -> None:
     assert code == 0
     assert not (tmp_path / "Inbox.md").exists()
     assert (tmp_path / "Work.md").read_text(encoding="utf-8") == "- [ ] do it\n"
+
+
+def test_cli_all_priority_only_filters(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+
+    (tmp_path / "a.md").write_text(
+        """- [ ] ! prio
+- [ ] normal
+""",
+        encoding="utf-8",
+    )
+
+    code = _run_cli(monkeypatch, ["all", "--priority-only"])
+    assert code == 0
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out == ["[ ] ! prio"]
 
 
 def test_colorize_checkbox_prefix() -> None:
