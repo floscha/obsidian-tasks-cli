@@ -36,16 +36,61 @@ List tasks from the default inbox path:
 uv run ot inbox
 ```
 
+List tasks from today’s daily note (and tasks in the vault that backlink to it via `[[yyyy-mm-dd]]`):
+
+```bash
+uv run ot today
+```
+
 List **all** tasks across the whole vault:
 
 ```bash
 uv run ot all
 ```
 
+List overdue tasks (past daily notes + backlink-to-past-date):
+
+```bash
+uv run ot overdue
+```
+
+List tasks in a specific note by name (searches for `<name>.md` anywhere in the vault):
+
+```bash
+uv run ot note "My Project"
+```
+
+Add a task to a note (prints the written note path):
+
+```bash
+uv run ot add "buy milk" --note "Inbox"
+```
+
 JSON output:
 
 ```bash
 uv run ot all --json
+```
+
+### Filtering
+
+Filter by status (you can pass multiple, comma-separated):
+
+```bash
+uv run ot all --status open
+uv run ot all --status "done,cancelled"
+```
+
+Only include “priority” tasks (strict marker: a literal ` ! ` right after the checkbox token):
+
+```bash
+uv run ot all --priority-only
+```
+
+Enable ANSI colors for checkbox tokens:
+
+```bash
+uv run ot inbox --color
 ```
 
 ### Output format
@@ -59,12 +104,15 @@ The default (human) output prints **one task per line**:
 
 ### Configure via `.env`
 
-This repo includes a `.env` file (loaded automatically when running the CLI from the repo).
+When running the CLI from this repo, a local `.env` file is loaded automatically.
 
 Set:
 
 - `OT_VAULT_PATH` — path to your Obsidian vault
 - `OT_INBOX_NOTE` — folder or note name inside the vault (default: `Inbox`)
+- `OT_CALENDAR_DIR` — folder (inside the vault) that contains daily notes (defaults to the vault root)
+- `OT_DEFAULT_ADD_NOTE` — default note name for `ot add` if `--note` is omitted
+- `OT_USE_COLORS` — set to a truthy value (`1`, `true`, `yes`, `on`) to enable colors by default
 
 Example:
 
@@ -101,6 +149,7 @@ uv run ot inbox --json
 JSON is a list of objects like:
 
 - `file`: absolute path to the markdown file
+- `line_number`: 1-based line number within that file
 - `text`: normalized task text, starting at the first `[` (e.g. `[ ] something`)
 
 ## Tests
