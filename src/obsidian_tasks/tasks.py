@@ -10,6 +10,53 @@ from typing import Iterable, TypeAlias
 TaskStatus: TypeAlias = str  # Literal would be nicer, but keep deps minimal.
 
 
+_CALENDAR_NOTE_STEM_RE = re.compile(r"^\d{4}(-\d{2}-\d{2})?$")
+_CALENDAR_WIKILINK_RE = re.compile(r"\[\[(\d{4}(?:-\d{2}-\d{2})?)\]\]")
+
+
+def is_calendar_note_path(path: str | Path) -> bool:
+    """Return True if the note filename looks like a calendar note.
+
+    Calendar notes are identified by a filename stem that starts with a year in
+    format yyyy. We accept both:
+    - yyyy.md (e.g. 2025.md)
+    - yyyy-mm-dd.md (daily note, e.g. 2025-01-01.md)
+    """
+
+    p = Path(path)
+    return bool(_CALENDAR_NOTE_STEM_RE.match(p.stem))
+
+
+def contains_calendar_backlink(text: str) -> bool:
+    """Return True if `text` contains a wikilink to a calendar note.
+
+    We consider a backlink scheduled if it links to:
+    - a year note: [[2025]]
+    - a daily note: [[2025-01-01]]
+    """
+
+    return bool(_CALENDAR_WIKILINK_RE.search(text))
+
+
+def is_scheduled_task(task: "Task") -> bool:
+    """Return True if a task is part of, or refers to, a calendar note."""
+
+    return is_calendar_note_path(task.file) or contains_calendar_backlink(task.raw)
+
+
+def filter_tasks_unscheduled(tasks: Iterable["Task"], *, unscheduled_only: bool) -> list["Task"]:
+    """Optionally filter tasks to only those that are not scheduled.
+
+    A task is considered scheduled when:
+    - it is defined inside a calendar note (filename stem starts with yyyy), OR
+    - it contains a wikilink to a calendar note (e.g. [[2025-01-01]]).
+    """
+
+    if not unscheduled_only:
+        return list(tasks)
+    return [t for t in tasks if not is_scheduled_task(t)]
+
+
 # Priority marker format:
 #
 # We treat a task as "priority" if it has a literal " ! " immediately after the

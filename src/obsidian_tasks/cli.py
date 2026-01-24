@@ -261,6 +261,9 @@ def _cmd_all(args: argparse.Namespace) -> int:
     tasks = tasks_mod.filter_tasks_by_priority(
         tasks, priority_only=bool(getattr(args, "priority_only", False))
     )
+    tasks = tasks_mod.filter_tasks_unscheduled(
+        tasks, unscheduled_only=bool(getattr(args, "unscheduled", False))
+    )
 
     def display_text(raw: str) -> str:
         # Omit everything before the first '[' (e.g. '- ' or '* '), keep the checkbox.
@@ -595,6 +598,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             'Only include tasks with a " ! " immediately after the checkbox token '
             '(e.g. "- [ ] ! foo")'
+        ),
+    )
+    all_cmd.add_argument(
+        "--unscheduled",
+        action="store_true",
+        help=(
+            "Show only tasks that are not in a calendar note (filename starting with yyyy) "
+            "and do not contain a calendar backlink like [[2025-01-01]]"
         ),
     )
     all_cmd.set_defaults(func=_cmd_all)

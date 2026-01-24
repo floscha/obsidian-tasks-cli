@@ -11,6 +11,7 @@ from obsidian_tasks.cli import (
 )
 from obsidian_tasks.tasks import (
     append_task_to_note,
+    contains_calendar_backlink,
     extract_backlinked_tasks,
     extract_overdue_tasks,
     extract_tasks_from_file,
@@ -18,8 +19,10 @@ from obsidian_tasks.tasks import (
     filter_tasks_by_priority,
     filter_tasks_by_status,
     filter_tasks_by_statuses,
-    is_priority_task_line,
+    filter_tasks_unscheduled,
     is_markdown_task_line,
+    is_calendar_note_path,
+    is_priority_task_line,
     resolve_calendar_daily_note_path,
     task_status_from_line,
 )
@@ -186,6 +189,36 @@ def test_resolve_calendar_daily_note_path_custom_calendar_dir(tmp_path: Path, mo
     assert p == tmp_path / "Calendar" / "2026-01-16.md"
 
 
+def test_is_calendar_note_path_year_and_daily() -> None:
+    assert is_calendar_note_path(Path("/vault/2025.md"))
+    assert is_calendar_note_path(Path("/vault/2025-01-01.md"))
+    assert not is_calendar_note_path(Path("/vault/Project 2025.md"))
+    assert not is_calendar_note_path(Path("/vault/notes.md"))
+
+
+def test_contains_calendar_backlink_year_and_daily() -> None:
+    assert contains_calendar_backlink("- [ ] do thing [[2025]]")
+    assert contains_calendar_backlink("- [ ] do thing [[2025-01-01]]")
+    assert not contains_calendar_backlink("- [ ] do thing [[Project 2025]]")
+    assert not contains_calendar_backlink("- [ ] do thing [[2025-1-1]]")
+
+
+def test_filter_tasks_unscheduled_filters_calendar_and_backlink(tmp_path: Path) -> None:
+    (tmp_path / "2025-01-01.md").write_text("- [ ] in daily\n", encoding="utf-8")
+    (tmp_path / "note.md").write_text(
+        """- [ ] linked [[2025-01-01]]
+- [ ] just a task
+""",
+        encoding="utf-8",
+    )
+
+    tasks = extract_tasks_from_file(tmp_path / "2025-01-01.md") + extract_tasks_from_file(
+        tmp_path / "note.md"
+    )
+    kept = filter_tasks_unscheduled(tasks, unscheduled_only=True)
+    assert [t.text for t in kept] == ["- [ ] just a task"]
+
+
 def test_extract_tasks_from_today_note_reads_tasks(tmp_path: Path) -> None:
     note = tmp_path / "2026-01-16.md"
     note.write_text(
@@ -251,6 +284,23 @@ def test_cli_all_priority_only_filters(tmp_path: Path, monkeypatch, capsys) -> N
     assert code == 0
     out = capsys.readouterr().out.strip().splitlines()
     assert out == ["[ ] ! prio"]
+
+
+def test_cli_all_unscheduled_filters(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+
+    (tmp_path / "2025-01-01.md").write_text("- [ ] in daily\n", encoding="utf-8")
+    (tmp_path / "a.md").write_text(
+        """- [ ] linked [[2025-01-01]]
+- [ ] normal
+""",
+        encoding="utf-8",
+    )
+
+    code = _run_cli(monkeypatch, ["all", "--unscheduled"])
+    assert code == 0
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out == ["[ ] normal"]
 
 
 def test_colorize_checkbox_prefix() -> None:
