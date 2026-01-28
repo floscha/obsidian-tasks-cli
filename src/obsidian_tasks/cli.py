@@ -5,6 +5,7 @@ import os
 import re
 import sys
 from datetime import date, timedelta
+from glob import glob
 from pathlib import Path
 
 from obsidian_tasks import tasks as tasks_mod
@@ -103,6 +104,44 @@ def resolve_inbox_path() -> Path:
     vault = os.environ["OT_VAULT_PATH"]
     inbox_note = os.environ.get("OT_INBOX_NOTE", "Inbox")
     return Path(vault).expanduser() / inbox_note
+
+
+def _resolve_paths(*, base_dir: Path, raw_paths: list[str] | None) -> list[Path]:
+    """Resolve CLI --path values into concrete filesystem paths.
+
+    Supports:
+    - files or directories
+    - globs (e.g. "notes/*.md", "**/*.md")
+
+    Notes:
+    - We expand user home (~).
+    - Matches are de-duplicated and sorted for stable output.
+    """
+
+    if not raw_paths:
+        return []
+
+    paths: set[Path] = set()
+    base = Path(base_dir).expanduser()
+    for raw in raw_paths:
+        s = str(raw).strip()
+        if not s:
+            continue
+
+        expanded = os.path.expanduser(s)
+        # Interpret relative paths as relative to the vault root.
+        if not os.path.isabs(expanded):
+            expanded = str(base / expanded)
+        # Treat presence of glob metacharacters as a glob pattern.
+        if any(ch in expanded for ch in "*?["):
+            for match in glob(expanded, recursive=True):
+                paths.add(Path(match))
+        else:
+            paths.add(Path(expanded))
+
+    # Keep only existing paths; a non-existing path is almost certainly user error.
+    existing = [p for p in paths if p.exists()]
+    return sorted(existing, key=lambda p: str(p))
 
 
 def _cmd_inbox(args: argparse.Namespace) -> int:
@@ -254,7 +293,14 @@ def _cmd_all(args: argparse.Namespace) -> int:
             "OT_VAULT_PATH is required for the 'all' command (set it in your environment or .env)"
         )
 
-    tasks = tasks_mod.extract_tasks(Path(vault_root).expanduser())
+    vault_path = Path(vault_root).expanduser()
+    selected = _resolve_paths(base_dir=vault_path, raw_paths=getattr(args, "path", None))
+    if selected:
+        tasks: list[tasks_mod.Task] = []
+        for p in selected:
+            tasks.extend(tasks_mod.extract_tasks(Path(p).expanduser()))
+    else:
+        tasks = tasks_mod.extract_tasks(vault_path)
     tasks = tasks_mod.filter_tasks_by_statuses(
         tasks, statuses=_parse_statuses(getattr(args, "status", None))
     )
@@ -581,6 +627,14 @@ def build_parser() -> argparse.ArgumentParser:
     all_cmd = sub.add_parser(
         "all",
         help="List Markdown tasks across the whole vault (all notes)",
+    )
+    all_cmd.add_argument(
+        "--path",
+        action="append",
+        help=(
+            "Limit search to specific file(s)/folder(s) or glob pattern(s). "
+            "Can be passed multiple times. Supports * wildcards (and ** for recursive)."
+        ),
     )
     all_cmd.add_argument("--json", action="store_true", help="Output JSON")
     all_cmd.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")

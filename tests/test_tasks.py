@@ -20,8 +20,8 @@ from obsidian_tasks.tasks import (
     filter_tasks_by_status,
     filter_tasks_by_statuses,
     filter_tasks_unscheduled,
-    is_markdown_task_line,
     is_calendar_note_path,
+    is_markdown_task_line,
     is_priority_task_line,
     resolve_calendar_daily_note_path,
     task_status_from_line,
@@ -258,6 +258,116 @@ def test_cli_add_uses_default_add_note_env(tmp_path: Path, monkeypatch) -> None:
     code = _run_cli(monkeypatch, ["add", "hello from cli"])
     assert code == 0
     assert (tmp_path / "Inbox.md").read_text(encoding="utf-8") == "- [ ] hello from cli\n"
+
+
+def test_cli_all_path_single_file_limits_scope(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+
+    (tmp_path / "a.md").write_text("- [ ] from a\n", encoding="utf-8")
+    (tmp_path / "b.md").write_text("- [ ] from b\n", encoding="utf-8")
+
+    # Only include tasks from a.md
+    from io import StringIO
+
+    buf = StringIO()
+    monkeypatch.setattr("sys.stdout", buf)
+    code = _run_cli(monkeypatch, ["all", "--path", str(tmp_path / "a.md")])
+    assert code == 0
+    assert buf.getvalue().strip().splitlines() == ["[ ] from a"]
+
+
+def test_cli_all_path_glob_supports_wildcards(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "one.md").write_text("- [ ] one\n", encoding="utf-8")
+    (notes / "two.md").write_text("- [ ] two\n", encoding="utf-8")
+    (tmp_path / "other.md").write_text("- [ ] other\n", encoding="utf-8")
+
+    from io import StringIO
+
+    buf = StringIO()
+    monkeypatch.setattr("sys.stdout", buf)
+    code = _run_cli(monkeypatch, ["all", "--path", str(notes / "*.md")])
+    assert code == 0
+
+    out_lines = [line for line in buf.getvalue().splitlines() if line.strip()]
+    assert sorted(out_lines) == ["[ ] one", "[ ] two"]
+
+
+def test_cli_all_path_multiple_values_union(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+
+    (tmp_path / "a.md").write_text("- [ ] a\n", encoding="utf-8")
+    (tmp_path / "b.md").write_text("- [ ] b\n", encoding="utf-8")
+    (tmp_path / "c.md").write_text("- [ ] c\n", encoding="utf-8")
+
+    from io import StringIO
+
+    buf = StringIO()
+    monkeypatch.setattr("sys.stdout", buf)
+    code = _run_cli(
+        monkeypatch,
+        [
+            "all",
+            "--path",
+            str(tmp_path / "a.md"),
+            "--path",
+            str(tmp_path / "b.md"),
+        ],
+    )
+    assert code == 0
+
+    out_lines = [line for line in buf.getvalue().splitlines() if line.strip()]
+    assert sorted(out_lines) == ["[ ] a", "[ ] b"]
+
+
+def test_cli_all_path_relative_is_relative_to_vault_root(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+
+    # Create a subfolder inside the vault.
+    projects = tmp_path / "1_Projects"
+    projects.mkdir()
+    (projects / "p.md").write_text("- [ ] project task\n", encoding="utf-8")
+
+    # Change CWD to something else to ensure we don't resolve relative to CWD.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+
+    from io import StringIO
+
+    buf = StringIO()
+    monkeypatch.setattr("sys.stdout", buf)
+
+    code = _run_cli(monkeypatch, ["all", "--path", "1_Projects/p.md"])
+    assert code == 0
+    assert buf.getvalue().strip().splitlines() == ["[ ] project task"]
+
+
+def test_cli_all_path_relative_glob_is_relative_to_vault_root(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+
+    projects = tmp_path / "1_Projects"
+    projects.mkdir()
+    (projects / "a.md").write_text("- [ ] a\n", encoding="utf-8")
+    (projects / "b.md").write_text("- [ ] b\n", encoding="utf-8")
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+
+    from io import StringIO
+
+    buf = StringIO()
+    monkeypatch.setattr("sys.stdout", buf)
+
+    code = _run_cli(monkeypatch, ["all", "--path", "1_Projects/*.md"])
+    assert code == 0
+
+    out_lines = [line for line in buf.getvalue().splitlines() if line.strip()]
+    assert sorted(out_lines) == ["[ ] a", "[ ] b"]
 
 
 def test_cli_add_note_flag_overrides_env(tmp_path: Path, monkeypatch) -> None:
