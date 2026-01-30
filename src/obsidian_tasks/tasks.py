@@ -418,10 +418,24 @@ def try_parse_ymd(value: str) -> date | None:
     m = _DATE_STEM_RE.match(s)
     if not m:
         return None
+
     try:
         return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
     except ValueError:
         return None
+
+
+def extract_first_backlink_ymd(text: str) -> date | None:
+    """Extract the first [[yyyy-mm-dd]] backlink from `text`.
+
+    Returns None if no valid backlink is present.
+    """
+
+    s = str(text)
+    m = _DATE_WIKILINK_RE.search(s)
+    if not m:
+        return None
+    return try_parse_ymd(m.group(1))
 
 
 def iter_daily_notes(

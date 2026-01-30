@@ -13,11 +13,78 @@ from obsidian_tasks.env import load_dotenv_if_present
 
 ANSI_RED = "\x1b[31m"
 ANSI_GREEN = "\x1b[32m"
+ANSI_BLUE = "\x1b[34m"
 ANSI_GREY = "\x1b[90m"
 ANSI_RESET = "\x1b[0m"
 
 
 _WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+
+
+def _task_date_prefix(task: tasks_mod.Task) -> str | None:
+    """Best-effort date for a task.
+
+    We try, in order:
+    1) Daily note date from filename (yyyy-mm-dd.md)
+    2) First explicit [[yyyy-mm-dd]] backlink in the task line
+    """
+
+    # From daily note filename
+    d = tasks_mod.try_parse_ymd(Path(task.file).stem)
+    if d is not None:
+        return f"{d:%Y-%m-%d}"
+
+    # From first [[yyyy-mm-dd]] backlink in the task text
+    backlinked = tasks_mod.extract_first_backlink_ymd(task.raw)
+    if backlinked is not None:
+        return f"{backlinked:%Y-%m-%d}"
+
+    return None
+
+
+def _maybe_prefix_date(
+    *,
+    task: tasks_mod.Task,
+    text: str,
+    show_date: bool,
+    use_color: bool,
+) -> str:
+    if not show_date:
+        return text
+
+    prefix = _task_date_prefix(task)
+    if not prefix:
+        return text
+
+    # Keep output stable and friendly: date + space + task
+    if use_color:
+        return f"{ANSI_BLUE}{prefix}{ANSI_RESET} {text}"
+    return f"{prefix} {text}"
+
+
+def _maybe_sort_tasks_by_date(
+    *,
+    tasks: list[tasks_mod.Task],
+    show_date: bool,
+) -> list[tasks_mod.Task]:
+    """Optionally sort tasks by derived date.
+
+    When `show_date` is False, returns tasks unchanged.
+    When True, sorts ascending by derived date and puts tasks without a date at the end.
+    A stable tie-breaker (file path + line number) keeps output deterministic.
+    """
+
+    if not show_date:
+        return tasks
+
+    def key(t: tasks_mod.Task) -> tuple[int, str, str, int]:
+        prefix = _task_date_prefix(t)
+        # Bucket 0: dated, Bucket 1: undated
+        bucket = 0 if prefix else 1
+        # Note: prefix is yyyy-mm-dd so lexical order matches chronological.
+        return (bucket, prefix or "9999-12-31", str(t.file), t.line_no)
+
+    return sorted(tasks, key=key)
 
 
 def _parse_statuses(raw: str | None) -> list[str] | None:
@@ -180,11 +247,20 @@ def _cmd_inbox(args: argparse.Namespace) -> int:
 
     use_color = _use_colors(args)
 
+    show_date = bool(getattr(args, "show_date", False))
+    tasks = _maybe_sort_tasks_by_date(tasks=tasks, show_date=show_date)
+
     # Human output: one task per line
     for t in tasks:
         text = display_text(t.raw)
         if use_color:
             text = colorize_checkbox_prefix(text)
+        text = _maybe_prefix_date(
+            task=t,
+            text=text,
+            show_date=show_date,
+            use_color=use_color,
+        )
         sys.stdout.write(f"{text}\n")
 
     return 0
@@ -266,11 +342,19 @@ def _cmd_day_offset(args: argparse.Namespace, *, offset_days: int) -> int:
         return 0
 
     use_color = _use_colors(args)
+    show_date = bool(getattr(args, "show_date", False))
+    tasks = _maybe_sort_tasks_by_date(tasks=tasks, show_date=show_date)
 
     for t in tasks:
         text = display_text(t.raw)
         if use_color:
             text = colorize_checkbox_prefix(text)
+        text = _maybe_prefix_date(
+            task=t,
+            text=text,
+            show_date=show_date,
+            use_color=use_color,
+        )
         sys.stdout.write(f"{text}\n")
 
     return 0
@@ -336,11 +420,19 @@ def _cmd_all(args: argparse.Namespace) -> int:
         return 0
 
     use_color = _use_colors(args)
+    show_date = bool(getattr(args, "show_date", False))
+    tasks = _maybe_sort_tasks_by_date(tasks=tasks, show_date=show_date)
 
     for t in tasks:
         text = display_text(t.raw)
         if use_color:
             text = colorize_checkbox_prefix(text)
+        text = _maybe_prefix_date(
+            task=t,
+            text=text,
+            show_date=show_date,
+            use_color=use_color,
+        )
         sys.stdout.write(f"{text}\n")
 
     return 0
@@ -406,10 +498,18 @@ def _cmd_overdue(args: argparse.Namespace) -> int:
         return 0
 
     use_color = _use_colors(args)
+    show_date = bool(getattr(args, "show_date", False))
+    tasks = _maybe_sort_tasks_by_date(tasks=tasks, show_date=show_date)
     for t in tasks:
         text = display_text(t.raw)
         if use_color:
             text = colorize_checkbox_prefix(text)
+        text = _maybe_prefix_date(
+            task=t,
+            text=text,
+            show_date=show_date,
+            use_color=use_color,
+        )
         sys.stdout.write(f"{text}\n")
 
     return 0
@@ -469,10 +569,18 @@ def _cmd_note(args: argparse.Namespace) -> int:
         return 0
 
     use_color = _use_colors(args)
+    show_date = bool(getattr(args, "show_date", False))
+    tasks = _maybe_sort_tasks_by_date(tasks=tasks, show_date=show_date)
     for t in tasks:
         text = display_text(t.raw)
         if use_color:
             text = colorize_checkbox_prefix(text)
+        text = _maybe_prefix_date(
+            task=t,
+            text=text,
+            show_date=show_date,
+            use_color=use_color,
+        )
         sys.stdout.write(f"{text}\n")
 
     return 0
@@ -535,6 +643,11 @@ def build_parser() -> argparse.ArgumentParser:
     inbox.add_argument("--json", action="store_true", help="Output JSON")
     inbox.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
     inbox.add_argument(
+        "--show-date",
+        action="store_true",
+        help="Prefix each task with its date (daily note date or first [[yyyy-mm-dd]] backlink)",
+    )
+    inbox.add_argument(
         "--status",
         help=(
             'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
@@ -558,6 +671,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     today.add_argument("--json", action="store_true", help="Output JSON")
     today.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    today.add_argument(
+        "--show-date",
+        action="store_true",
+        help="Prefix each task with its date (daily note date or first [[yyyy-mm-dd]] backlink)",
+    )
     today.add_argument(
         "--status",
         help=(
@@ -583,6 +701,11 @@ def build_parser() -> argparse.ArgumentParser:
     yesterday.add_argument("--json", action="store_true", help="Output JSON")
     yesterday.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
     yesterday.add_argument(
+        "--show-date",
+        action="store_true",
+        help="Prefix each task with its date (daily note date or first [[yyyy-mm-dd]] backlink)",
+    )
+    yesterday.add_argument(
         "--status",
         help=(
             'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
@@ -606,6 +729,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tomorrow.add_argument("--json", action="store_true", help="Output JSON")
     tomorrow.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    tomorrow.add_argument(
+        "--show-date",
+        action="store_true",
+        help="Prefix each task with its date (daily note date or first [[yyyy-mm-dd]] backlink)",
+    )
     tomorrow.add_argument(
         "--status",
         help=(
@@ -638,6 +766,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     all_cmd.add_argument("--json", action="store_true", help="Output JSON")
     all_cmd.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    all_cmd.add_argument(
+        "--show-date",
+        action="store_true",
+        help="Prefix each task with its date (daily note date or first [[yyyy-mm-dd]] backlink)",
+    )
     all_cmd.add_argument(
         "--status",
         help=(
@@ -674,6 +807,11 @@ def build_parser() -> argparse.ArgumentParser:
     overdue.add_argument("--json", action="store_true", help="Output JSON")
     overdue.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
     overdue.add_argument(
+        "--show-date",
+        action="store_true",
+        help="Prefix each task with its date (daily note date or first [[yyyy-mm-dd]] backlink)",
+    )
+    overdue.add_argument(
         "--status",
         help=(
             'Filter tasks by status: "open" (- [ ]), "done" (- [x]), "cancelled" (- [-]), '
@@ -703,6 +841,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     note.add_argument("--json", action="store_true", help="Output JSON")
     note.add_argument("--color", "-c", action="store_true", help="Colorize checkbox")
+    note.add_argument(
+        "--show-date",
+        action="store_true",
+        help="Prefix each task with its date (daily note date or first [[yyyy-mm-dd]] backlink)",
+    )
     note.add_argument(
         "--status",
         help=(

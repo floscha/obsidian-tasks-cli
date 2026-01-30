@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from obsidian_tasks.cli import (
+    ANSI_BLUE,
     ANSI_GREEN,
     ANSI_GREY,
     ANSI_RED,
@@ -892,3 +893,86 @@ def test_cli_overdue_status_filter_can_include_done(tmp_path: Path, monkeypatch,
     assert rc == 0
     out = capsys.readouterr().out.splitlines()
     assert sorted(out) == sorted(["[ ] open one", "[x] done one"])
+
+
+def test_cli_today_show_date_prefixes_daily_note_date(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    today = date.today()
+    note = tmp_path / f"{today:%Y-%m-%d}.md"
+    note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
+
+    rc = _run_cli(monkeypatch, ["today", "--show-date"])
+    assert rc == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out == [f"{today:%Y-%m-%d} [ ] local"]
+
+
+def test_cli_today_show_date_colors_date_blue_when_color_enabled(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.setenv("OT_CALENDAR_DIR", "")
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    today = date.today()
+    note = tmp_path / f"{today:%Y-%m-%d}.md"
+    note.write_text("# Today\n\n- [ ] local\n", encoding="utf-8")
+
+    rc = _run_cli(monkeypatch, ["today", "--show-date", "--color"])
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    assert out == (
+        f"{ANSI_BLUE}{today:%Y-%m-%d}{ANSI_RESET} "
+        f"{ANSI_RED}[ ]{ANSI_RESET} local\n"
+    )
+
+
+def test_cli_all_show_date_uses_first_backlink_date_when_not_in_daily_note(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    (tmp_path / "Work.md").write_text(
+        "- [ ] follow up [[2026-01-16]]\n",
+        encoding="utf-8",
+    )
+
+    rc = _run_cli(monkeypatch, ["all", "--show-date"])
+    assert rc == 0
+
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["2026-01-16 [ ] follow up"]
+
+
+def test_cli_all_show_date_sorts_by_date_and_puts_undated_last(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    (tmp_path / "A.md").write_text(
+        "\n".join(
+            [
+                "- [ ] no date here",
+                "- [ ] later [[2026-01-20]]",
+                "- [ ] earlier [[2026-01-10]]",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = _run_cli(monkeypatch, ["all", "--show-date"])
+    assert rc == 0
+
+    out = capsys.readouterr().out.splitlines()
+    assert out == [
+        "2026-01-10 [ ] earlier",
+        "2026-01-20 [ ] later",
+        "[ ] no date here",
+    ]
