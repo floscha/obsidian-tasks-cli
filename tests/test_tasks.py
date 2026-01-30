@@ -7,6 +7,7 @@ from obsidian_tasks.cli import (
     ANSI_GREY,
     ANSI_RED,
     ANSI_RESET,
+    ANSI_YELLOW,
     colorize_checkbox_prefix,
     main,
 )
@@ -417,7 +418,7 @@ def test_cli_all_unscheduled_filters(tmp_path: Path, monkeypatch, capsys) -> Non
 def test_colorize_checkbox_prefix() -> None:
     assert (
         colorize_checkbox_prefix("[ ] hello")
-        == f"{ANSI_RED}[ ]{ANSI_RESET} hello"
+        == f"{ANSI_BLUE}[ ]{ANSI_RESET} hello"
     )
     assert (
         colorize_checkbox_prefix("[x] done")
@@ -684,7 +685,7 @@ def test_cli_today_uses_colors_from_env(tmp_path: Path, monkeypatch, capsys) -> 
     assert rc == 0
 
     out = capsys.readouterr().out
-    assert out == f"{ANSI_RED}[ ]{ANSI_RESET} local\n"
+    assert out == f"{ANSI_BLUE}[ ]{ANSI_RESET} local\n"
 
 
 def test_cli_today_uses_colors_from_ot_env(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -700,7 +701,7 @@ def test_cli_today_uses_colors_from_ot_env(tmp_path: Path, monkeypatch, capsys) 
     assert rc == 0
 
     out = capsys.readouterr().out
-    assert out == f"{ANSI_RED}[ ]{ANSI_RESET} local\n"
+    assert out == f"{ANSI_BLUE}[ ]{ANSI_RESET} local\n"
 
 
 def test_cli_today_uses_colors_from_dotenv(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -721,7 +722,7 @@ def test_cli_today_uses_colors_from_dotenv(tmp_path: Path, monkeypatch, capsys) 
     assert rc == 0
 
     out = capsys.readouterr().out
-    assert out == f"{ANSI_RED}[ ]{ANSI_RESET} local\n"
+    assert out == f"{ANSI_BLUE}[ ]{ANSI_RESET} local\n"
 
 
 def test_cli_all_lists_tasks_across_vault(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -926,9 +927,42 @@ def test_cli_today_show_date_colors_date_blue_when_color_enabled(
 
     out = capsys.readouterr().out
     assert out == (
-        f"{ANSI_BLUE}{today:%Y-%m-%d}{ANSI_RESET} "
-        f"{ANSI_RED}[ ]{ANSI_RESET} local\n"
+        f"{ANSI_YELLOW}{today:%Y-%m-%d}{ANSI_RESET} "
+        f"{ANSI_BLUE}[ ]{ANSI_RESET} local\n"
     )
+
+
+def test_cli_all_show_date_colors_past_today_future_dates(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("OT_VAULT_PATH", str(tmp_path))
+    monkeypatch.delenv("OT_USE_COLORS", raising=False)
+
+    today = date.today()
+    past = today - timedelta(days=1)
+    future = today + timedelta(days=1)
+
+    (tmp_path / "A.md").write_text(
+        "\n".join(
+            [
+                f"- [ ] past [[{past:%Y-%m-%d}]]",
+                f"- [ ] today [[{today:%Y-%m-%d}]]",
+                f"- [ ] future [[{future:%Y-%m-%d}]]",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = _run_cli(monkeypatch, ["all", "--show-date", "--color"])
+    assert rc == 0
+
+    out = capsys.readouterr().out.splitlines()
+    assert out == [
+        f"{ANSI_RED}{past:%Y-%m-%d}{ANSI_RESET} {ANSI_BLUE}[ ]{ANSI_RESET} past",
+        f"{ANSI_YELLOW}{today:%Y-%m-%d}{ANSI_RESET} {ANSI_BLUE}[ ]{ANSI_RESET} today",
+        f"{ANSI_GREEN}{future:%Y-%m-%d}{ANSI_RESET} {ANSI_BLUE}[ ]{ANSI_RESET} future",
+    ]
 
 
 def test_cli_all_show_date_uses_first_backlink_date_when_not_in_daily_note(

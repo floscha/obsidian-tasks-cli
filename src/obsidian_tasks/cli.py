@@ -14,6 +14,7 @@ from obsidian_tasks.env import load_dotenv_if_present
 ANSI_RED = "\x1b[31m"
 ANSI_GREEN = "\x1b[32m"
 ANSI_BLUE = "\x1b[34m"
+ANSI_YELLOW = "\x1b[33m"
 ANSI_GREY = "\x1b[90m"
 ANSI_RESET = "\x1b[0m"
 
@@ -42,6 +43,24 @@ def _task_date_prefix(task: tasks_mod.Task) -> str | None:
     return None
 
 
+def _task_date_value(task: tasks_mod.Task) -> date | None:
+    """Best-effort date for a task as a `date` value."""
+
+    d = tasks_mod.try_parse_ymd(Path(task.file).stem)
+    if d is not None:
+        return d
+
+    return tasks_mod.extract_first_backlink_ymd(task.raw)
+
+
+def _date_color(*, d: date, today: date) -> str:
+    if d < today:
+        return ANSI_RED
+    if d > today:
+        return ANSI_GREEN
+    return ANSI_YELLOW
+
+
 def _maybe_prefix_date(
     *,
     task: tasks_mod.Task,
@@ -52,13 +71,17 @@ def _maybe_prefix_date(
     if not show_date:
         return text
 
-    prefix = _task_date_prefix(task)
-    if not prefix:
+    # Derived date (either from daily note filename or first [[yyyy-mm-dd]] backlink)
+    d = _task_date_value(task)
+    if d is None:
         return text
+
+    prefix = f"{d:%Y-%m-%d}"
 
     # Keep output stable and friendly: date + space + task
     if use_color:
-        return f"{ANSI_BLUE}{prefix}{ANSI_RESET} {text}"
+        c = _date_color(d=d, today=date.today())
+        return f"{c}{prefix}{ANSI_RESET} {text}"
     return f"{prefix} {text}"
 
 
@@ -154,7 +177,7 @@ def colorize_checkbox_prefix(text: str) -> str:
     rest = text[3:]
 
     if token == "[ ]":
-        return f"{ANSI_RED}{token}{ANSI_RESET}{rest}"
+        return f"{ANSI_BLUE}{token}{ANSI_RESET}{rest}"
     if token.lower() == "[x]":
         return f"{ANSI_GREEN}{token}{ANSI_RESET}{rest}"
     if token == "[-]":
